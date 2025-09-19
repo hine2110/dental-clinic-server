@@ -1,43 +1,43 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { authenticate, authorize } = require('../middlewares/auth');
+const { authenticate, authorize } = require("../middlewares/auth");
 const {
   register,
   login,
   getMe,
   logout,
   createAccount,
-  changePassword
-} = require('../controllers/authController');
+  changePassword,
+} = require("../controllers/authController");
 
 // @desc    Register new patient account
 // @route   POST /api/auth/register
 // @access  Public
-router.post('/register', register);
+router.post("/register", register);
 
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
-router.post('/login', login);
+router.post("/login", login);
 
 // @desc    Get current user info
 // @route   GET /api/auth/me
 // @access  Private
-router.get('/me', authenticate, getMe);
+router.get("/me", authenticate, getMe);
 
 // @desc    Logout user
 // @route   POST /api/auth/logout
 // @access  Private
-router.post('/logout', authenticate, logout);
+router.post("/logout", authenticate, logout);
 
 // @desc    Change password
 // @route   PUT /api/auth/change-password
 // @access  Private
-router.put('/change-password', authenticate, changePassword);
-
-// @desc    Create new account (Admin/Staff only)
+// @desc    Create new account (Admin only)
 // @route   POST /api/auth/create-account
-// @access  Private (Admin/Staff)
-router.post('/create-account', authenticate, authorize('admin', 'receptionist'), createAccount);
+// @access  Private (Admin only)
+router.post("/create-account", authenticate, authorize("admin"), createAccount);
+
+router.put("/change-password", authenticate, changePassword);
 
 module.exports = router;
