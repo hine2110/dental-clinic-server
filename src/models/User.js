@@ -36,6 +36,10 @@ const userSchema = new mongoose.Schema(
       required: [true, "Phone number is required"],
       match: [/^[0-9+\-\s()]+$/, "Please provide a valid phone number"],
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
