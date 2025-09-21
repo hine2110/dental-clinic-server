@@ -1,43 +1,36 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middlewares/auth");
-const {
-  register,
-  login,
-  getMe,
-  logout,
-  createAccount,
-  changePassword,
-} = require("../controllers/authController");
 
-// @desc    Register new patient account
-// @route   POST /api/auth/register
-// @access  Public
-router.post("/register", register);
+// Import controllers
+const { login, getMe, logout } = require("../controllers/authController");
+const { registerPatient, createStaffAccount } = require("../controllers/registerController");
+const { sendVerificationCodeHandler, verifyEmailCode, resendVerificationCode } = require("../controllers/verificationController");
+const { changePassword, forgotPassword, resetPassword, checkResetToken } = require("../controllers/passwordController");
+const { googleAuth, googleCallback } = require("../controllers/googleController");
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
+// Auth routes
 router.post("/login", login);
-
-// @desc    Get current user info
-// @route   GET /api/auth/me
-// @access  Private
 router.get("/me", authenticate, getMe);
-
-// @desc    Logout user
-// @route   POST /api/auth/logout
-// @access  Private
 router.post("/logout", authenticate, logout);
 
-// @desc    Change password
-// @route   PUT /api/auth/change-password
-// @access  Private
-// @desc    Create new account (Admin only)
-// @route   POST /api/auth/create-account
-// @access  Private (Admin only)
-router.post("/create-account", authenticate, authorize("admin"), createAccount);
+// Register routes
+router.post("/register", registerPatient);
+router.post("/create-account", authenticate, authorize("admin"), createStaffAccount);
 
+// Verification routes
+router.post("/send-code", sendVerificationCodeHandler);
+router.post("/verify-code", verifyEmailCode);
+router.post("/resend-code", resendVerificationCode);
+
+// Password routes
 router.put("/change-password", authenticate, changePassword);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
+router.get("/check-reset-token/:token", checkResetToken);
+
+// Google OAuth routes
+router.get("/google", googleAuth);
+router.get("/google/callback", googleCallback);
 
 module.exports = router;

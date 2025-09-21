@@ -1,103 +1,11 @@
-const { User, Patient, Doctor } = require("../models");
+const { User, Patient } = require("../models");
 const { generateToken } = require("../middlewares/auth");
 
-// @desc    Register new user (Patient)
-// @route   POST /api/auth/register
-// @access  Public
-const register = async (req, res) => {
-  try {
-    const {
-      email,
-      password,
-      firstName,
-      lastName,
-      phone,
-      dateOfBirth,
-      address,
-    } = req.body;
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists with this email",
-      });
-    }
-
-    // Create user account
-    const user = await User.create({
-      email,
-      password,
-      role: "patient", // Default role for registration
-      firstName,
-      lastName,
-      phone,
-      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-      address: address || {},
-    });
-
-    // Create patient profile
-    const patient = await Patient.create({
-      user: user._id,
-      emergencyContact: {
-        name: "",
-        relationship: "",
-        phone: "",
-      },
-    });
-
-    // Generate JWT token
-    const token = generateToken(user._id);
-
-    res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        token,
-        user: {
-          id: user._id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          fullName: user.fullName,
-          role: user.role,
-          phone: user.phone,
-          avatar: user.avatar,
-        },
-        profile: {
-          patientId: patient.patientId,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Register error:", error);
-
-    // Handle validation errors
-    if (error.name === "ValidationError") {
-      const messages = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: messages,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Server error during registration",
-    });
-  }
-};
-
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
 const login = async (req, res) => {
   try {
+    console.log('🔐 Login request body:', req.body);
     const { email, password } = req.body;
 
-    // Validate input
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -105,7 +13,6 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user by email (include password for comparison)
     const user = await User.findByEmail(email);
     if (!user) {
       return res.status(401).json({
@@ -114,7 +21,6 @@ const login = async (req, res) => {
       });
     }
 
-    // Check if account is active
     if (!user.isActive) {
       return res.status(401).json({
         success: false,
@@ -122,7 +28,6 @@ const login = async (req, res) => {
       });
     }
 
-    // Compare password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -137,7 +42,6 @@ const login = async (req, res) => {
 
     // Get additional profile data based on role
     let profileData = {};
-
     if (user.role === "doctor") {
       const doctorProfile = await Doctor.findOne({ user: user._id });
       if (doctorProfile) {
@@ -157,7 +61,6 @@ const login = async (req, res) => {
       }
     }
 
-    // Generate JWT token
     const token = generateToken(user._id);
 
     res.json({
@@ -188,16 +91,11 @@ const login = async (req, res) => {
   }
 };
 
-// @desc    Get current user info
-// @route   GET /api/auth/me
-// @access  Private
 const getMe = async (req, res) => {
   try {
-    const user = req.user; // From auth middleware
+    const user = req.user;
 
-    // Get additional profile data based on role
     let profileData = {};
-
     if (user.role === "doctor") {
       const doctorProfile = await Doctor.findOne({ user: user._id });
       if (doctorProfile) {
@@ -250,19 +148,8 @@ const getMe = async (req, res) => {
   }
 };
 
-// @desc    Logout user
-// @route   POST /api/auth/logout
-// @access  Private
 const logout = async (req, res) => {
   try {
-    // In a more advanced implementation, you would:
-    // 1. Add token to blacklist
-    // 2. Clear refresh tokens from database
-    // 3. Clear session data
-
-    // For now, we'll just send success response
-    // The client should remove the token from storage
-
     res.json({
       success: true,
       message: "Logged out successfully",
@@ -276,179 +163,8 @@ const logout = async (req, res) => {
   }
 };
 
-// @desc    Create account (Admin only)
-// @route   POST /api/auth/create-account
-// @access  Private (Admin only)
-const createAccount = async (req, res) => {
-  try {
-    const {
-      email,
-      role,
-      firstName,
-      lastName,
-      phone,
-      specializations,
-      temporaryPassword,
-    } = req.body;
-
-    // Check if user has permission to create accounts (Admin only)
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Permission denied. Only admin can create staff accounts.",
-      });
-    }
-
-    // Validate role - only doctor and receptionist
-    const allowedRoles = ["doctor", "receptionist"];
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid role. Allowed roles: doctor, receptionist",
-      });
-    }
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists with this email",
-      });
-    }
-
-    // Generate temporary password if not provided
-    const password =
-      temporaryPassword || `temp${Math.random().toString(36).slice(-8)}`;
-
-    // Create user account
-    const user = await User.create({
-      email,
-      password,
-      role,
-      fullName: `${firstName} ${lastName}`.trim(),
-      phone,
-    });
-
-    console.log("User created successfully:", user._id);
-
-    // Create role-specific profile
-    let profileData = {};
-
-    if (role === "doctor") {
-      try {
-        const doctor = await Doctor.create({
-          user: user._id,
-          license: "DDS2024001", // Default license
-          specializations: specializations || "General Dentistry",
-          workSchedule: "Monday-Friday: 08:00-17:00",
-          consultationFee: 200000,
-        });
-
-        console.log("Doctor profile created successfully:", doctor._id);
-
-        profileData = {
-          doctorId: doctor._id,
-          specializations: doctor.specializations,
-        };
-      } catch (doctorError) {
-        console.error("Error creating doctor profile:", doctorError);
-        // Rollback user creation if doctor profile fails
-        await User.findByIdAndDelete(user._id);
-        throw doctorError;
-      }
-    }
-
-    res.status(201).json({
-      success: true,
-      message: `${role} account created successfully`,
-      data: {
-        user: {
-          id: user._id,
-          email: user.email,
-          fullName: user.fullName,
-          role: user.role,
-          phone: user.phone,
-        },
-        profile: profileData,
-        temporaryPassword: password,
-        note: "Please change password on first login",
-      },
-    });
-  } catch (error) {
-    console.error("Create account error:", error);
-
-    if (error.name === "ValidationError") {
-      const messages = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: messages,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Server error creating account",
-    });
-  }
-};
-
-// @desc    Change password
-// @route   PUT /api/auth/change-password
-// @access  Private
-const changePassword = async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: "Current password and new password are required",
-      });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: "New password must be at least 6 characters long",
-      });
-    }
-
-    // Get user with password
-    const user = await User.findById(req.user._id).select("+password");
-
-    // Verify current password
-    const isCurrentPasswordValid = await user.comparePassword(currentPassword);
-    if (!isCurrentPasswordValid) {
-      return res.status(400).json({
-        success: false,
-        message: "Current password is incorrect",
-      });
-    }
-
-    // Update password
-    user.password = newPassword;
-    await user.save();
-
-    res.json({
-      success: true,
-      message: "Password changed successfully",
-    });
-  } catch (error) {
-    console.error("Change password error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error changing password",
-    });
-  }
-};
-
 module.exports = {
-  register,
   login,
   getMe,
-  logout,
-  createAccount,
-  changePassword,
+  logout
 };

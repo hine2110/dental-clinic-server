@@ -22,7 +22,9 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
+      required: function() {
+        return !this.googleId; // Only required if not Google user
+      },
       minlength: [6, "Password must be at least 6 characters"],
       select: false, // Don't include password in queries by default
     },
@@ -33,12 +35,19 @@ const userSchema = new mongoose.Schema(
     },
     phone: {
       type: String,
-      required: [true, "Phone number is required"],
+      required: function() {
+        return !this.googleId; // Only required if not Google user
+      },
       match: [/^[0-9+\-\s()]+$/, "Please provide a valid phone number"],
     },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    googleId: {
+      type: String,
+      sparse: true, // Allow multiple null values
+      unique: true,
     },
   },
   {

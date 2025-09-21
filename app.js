@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const passport = require('passport');
 require('dotenv').config();
 
 const connectDB = require('./src/config/database');
@@ -18,6 +19,12 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Passport middleware
+app.use(passport.initialize());
+
+// Import Google OAuth strategy
+require('./src/controllers/googleController');
 
 // Import routes
 const authRoutes = require('./src/routes/authRoutes');
