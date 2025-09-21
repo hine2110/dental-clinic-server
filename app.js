@@ -1,8 +1,8 @@
-const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
+const express = require("express");
+const cors = require("cors");
+require("dotenv").config();
 
-const connectDB = require('./src/config/database');
+const connectDB = require("./src/config/database");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -11,64 +11,69 @@ const PORT = process.env.PORT || 5000;
 connectDB();
 
 // Middleware
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    credentials: true,
+  })
+);
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Import routes
-const authRoutes = require('./src/routes/authRoutes');
+const authRoutes = require("./src/routes/authRoutes");
+const adminRoutes = require("./src/routes/adminRoutes");
 
 // Basic route
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Dental Clinic Management API',
-    status: 'Server is running successfully',
-    version: '1.0.0',
+app.get("/", (req, res) => {
+  res.json({
+    message: "Dental Clinic Management API",
+    status: "Server is running successfully",
+    version: "1.0.0",
     endpoints: {
-      auth: '/api/auth',
-      health: '/health'
-    }
+      auth: "/api/auth",
+      admin: "/api/admin",
+      health: "/health",
+    },
   });
 });
 
 // Health check route
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "OK",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    database: 'Connected'
+    database: "Connected",
   });
 });
 
 // Routes
-app.use('/api/auth', authRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 
 // 404 handler - must be last
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'API endpoint not found'
+    message: "API endpoint not found",
   });
 });
 
 // Error handling middleware
 app.use((error, req, res, next) => {
-  console.error('Error:', error.message);
+  console.error("Error:", error.message);
   res.status(error.status || 500).json({
     success: false,
-    message: error.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    message: error.message || "Internal Server Error",
+    ...(process.env.NODE_ENV === "development" && { stack: error.stack }),
   });
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`🔗 API URL: http://localhost:${PORT}`);
 });
 

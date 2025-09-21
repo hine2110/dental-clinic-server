@@ -2,6 +2,11 @@ const mongoose = require("mongoose");
 
 const doctorSchema = new mongoose.Schema(
   {
+    doctorId: {
+      type: String,
+      unique: true,
+      sparse: true, // Allows multiple null values
+    },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -28,6 +33,10 @@ const doctorSchema = new mongoose.Schema(
       required: [true, "Consultation fee is required"],
       min: [0, "Consultation fee must be positive"],
     },
+    isAcceptingNewPatients: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
@@ -35,6 +44,16 @@ const doctorSchema = new mongoose.Schema(
     toObject: { virtuals: true },
   }
 );
+
+// Auto-generate doctorId before saving
+doctorSchema.pre("save", function (next) {
+  if (!this.doctorId) {
+    // Generate doctor ID: DOC + 6 random numbers
+    const randomNum = Math.floor(100000 + Math.random() * 900000);
+    this.doctorId = `DOC${randomNum}`;
+  }
+  next();
+});
 
 // Populate user data when querying doctors
 doctorSchema.pre(/^find/, function () {
