@@ -6,7 +6,6 @@ const {
   login,
   getMe,
   logout,
-  createAccount,
   changePassword,
 } = require("../controllers/authController");
 
@@ -33,11 +32,6 @@ router.post("/logout", authenticate, logout);
 // @desc    Change password
 // @route   PUT /api/auth/change-password
 // @access  Private
-// @desc    Create new account (Admin only)
-// @route   POST /api/auth/create-account
-// @access  Private (Admin only)
-router.post("/create-account", authenticate, authorize("admin"), createAccount);
-
 router.put("/change-password", authenticate, changePassword);
 
 module.exports = router;
