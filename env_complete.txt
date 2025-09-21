@@ -1,0 +1,24 @@
+# Copy this file to .env in dental-clinic-server folder
+
+# Database
+MONGODB_URI=mongodb://localhost:27017/dental-clinic
+
+# JWT
+JWT_SECRET=your-super-secret-jwt-key-here
+JWT_EXPIRE=7d
+
+# Email Configuration
+EMAIL_USER=your-email@gmail.com
+EMAIL_APP_PASSWORD=bhhgpsfrfhlzhfkb
+
+# Client URL
+CLIENT_URL=http://localhost:3000
+
+# Google OAuth (Lấy từ Google Cloud Console)
+GOOGLE_CLIENT_ID=876490754466-3ajoq0fku4gateeoqkimj1i3bekguaaa.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret-from-console
+GOOGLE_CALLBACK_URL=http://localhost:5000/api/auth/google/callback
+
+# Server Configuration
+PORT=5000
+NODE_ENV=development
