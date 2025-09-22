@@ -1,5 +1,6 @@
 const { User } = require("../models");
 const { generateToken } = require("../middlewares/auth");
+const { validateUserRegistration } = require("../utils/validation");
 
 const registerPatient = async (req, res) => {
   try {
@@ -15,6 +16,16 @@ const registerPatient = async (req, res) => {
       address,
     } = req.body;
 
+    // Prepare user data for validation
+    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+    const userData = {
+      email,
+      password,
+      fullName,
+      phone,
+      role: "patient"
+    };
+
     console.log("🔍 Extracted fields:", {
       email,
       firstName,
@@ -23,44 +34,22 @@ const registerPatient = async (req, res) => {
       hasPassword: !!password,
     });
 
+    // Validate user data using validation utils
+    const validation = validateUserRegistration(userData);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validation.errors,
+      });
+    }
+
     // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
-        message: "User already exists with this email",
-      });
-    }
-
-    // Validate required fields
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
-    }
-
-    if (!firstName || !lastName) {
-      return res.status(400).json({
-        success: false,
-        message: "First name and last name are required",
-      });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid email address",
-      });
-    }
-
-    // Validate password length
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: "Password must be at least 6 characters long",
+        message: "User with this email already exists",
       });
     }
 
@@ -69,7 +58,7 @@ const registerPatient = async (req, res) => {
       email,
       password,
       role: "patient",
-      fullName: `${firstName.trim()} ${lastName.trim()}`.trim(),
+      fullName,
       phone,
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
       address: address || {},
