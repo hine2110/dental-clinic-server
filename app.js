@@ -28,6 +28,8 @@ require('./src/controllers/googleController');
 
 // Import routes
 const authRoutes = require('./src/routes/authRoutes');
+const staffRoutes = require('./src/routes/staffRoutes');
+const adminRoutes = require('./src/routes/adminRoutes');
 
 // Basic route
 app.get('/', (req, res) => {
@@ -37,6 +39,8 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       auth: '/api/auth',
+      staff: '/api/staff',
+      admin: '/api/admin',
       health: '/health'
     }
   });
@@ -54,6 +58,8 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/staff', staffRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 handler - must be last
 app.use((req, res) => {

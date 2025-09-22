@@ -7,6 +7,10 @@ const prescriptionSchema = new mongoose.Schema(
     patient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
     doctor: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor" },
     staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
+    services: [{ 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: "Service" 
+    }], // Các dịch vụ doctor kê đơn
     medications: { type: String, trim: true },
     instructions: { type: String, trim: true },
     status: {

@@ -12,6 +12,9 @@ const Invoice = require("./Invoice");
 const Prescription = require("./Prescription");
 const Medicine = require("./Medicine");
 const Verification = require("./Verification");
+const EquipmentIssue = require("./EquipmentIssue");
+const DispenseMedicine = require("./DispenseMedicine");
+const Notification = require("./Notification");
 
 module.exports = {
   User,
@@ -27,4 +30,7 @@ module.exports = {
   Prescription,
   Medicine,
   Verification,
+  EquipmentIssue,
+  DispenseMedicine,
+  Notification,
 };

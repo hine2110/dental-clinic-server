@@ -3,8 +3,9 @@ const mongoose = require("mongoose");
 const invoiceSchema = new mongoose.Schema(
   {
     invoiceId: { type: String, unique: true },
-    staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
-    patient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
+    appointment: { type: mongoose.Schema.Types.ObjectId, ref: "Appointment" },
+    staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff", required: true },
+    patient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient", required: true },
     invoiceDate: { type: Date, default: Date.now },
     total: { type: Number },
     paymentStatus: {
