@@ -10,7 +10,7 @@ const Staff = require("../../models/Staff");
 const manageDoctorSchedule = async (req, res) => {
   try {
     const { doctorId, date, startTime, endTime, isAvailable = true } = req.body;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     // Kiểm tra doctor tồn tại
     const doctor = await Doctor.findById(doctorId);

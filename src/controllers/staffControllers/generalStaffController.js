@@ -8,7 +8,7 @@ const Medicine = require("../../models/Medicine");
 const reportEquipmentIssue = async (req, res) => {
   try {
     const { equipmentId, issueDescription, severity = "medium" } = req.body;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     const equipment = await Equipment.findById(equipmentId);
     if (!equipment) {
@@ -172,7 +172,7 @@ const getMedicineDetail = async (req, res) => {
 const getEquipmentIssues = async (req, res) => {
   try {
     const { status, severity, equipmentId } = req.query;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     let query = { reporter: staffId };
     if (status) query.status = status;
@@ -202,7 +202,7 @@ const updateEquipmentIssue = async (req, res) => {
   try {
     const { issueId } = req.params;
     const { issueDescription, severity } = req.body;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     const issue = await EquipmentIssue.findById(issueId);
     if (!issue) {
