@@ -9,10 +9,9 @@ const adminSchema = new mongoose.Schema(
         enum: [
           "createDoctor&StaffAccount",
           "viewEquipment",
-          "manageDoctor&StaffSchedule",
           "viewUserAccounts",
           "viewRevenueStatistics",
-          "viewPatientStatistics",
+          "viewEquipmentIssues",
         ],
       },
     ],
