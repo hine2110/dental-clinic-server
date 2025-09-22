@@ -4,10 +4,23 @@ const { authenticate, authorize } = require("../middlewares/auth");
 
 // Import controllers
 const { login, getMe, logout } = require("../controllers/authController");
-const { registerPatient, createStaffAccount } = require("../controllers/registerController");
-const { sendVerificationCodeHandler, verifyEmailCode, resendVerificationCode } = require("../controllers/verificationController");
-const { changePassword, forgotPassword, resetPassword, checkResetToken } = require("../controllers/passwordController");
-const { googleAuth, googleCallback } = require("../controllers/googleController");
+const { registerPatient } = require("../controllers/registerController");
+const { createStaffAccount } = require("../controllers/adminController");
+const {
+  sendVerificationCodeHandler,
+  verifyEmailCode,
+  resendVerificationCode,
+} = require("../controllers/verificationController");
+const {
+  changePassword,
+  forgotPassword,
+  resetPassword,
+  checkResetToken,
+} = require("../controllers/passwordController");
+const {
+  googleAuth,
+  googleCallback,
+} = require("../controllers/googleController");
 
 // Auth routes
 router.post("/login", login);
@@ -16,7 +29,12 @@ router.post("/logout", authenticate, logout);
 
 // Register routes
 router.post("/register", registerPatient);
-router.post("/create-account", authenticate, authorize("admin"), createStaffAccount);
+router.post(
+  "/create-account",
+  authenticate,
+  authorize("admin"),
+  createStaffAccount
+);
 
 // Verification routes
 router.post("/send-code", sendVerificationCodeHandler);

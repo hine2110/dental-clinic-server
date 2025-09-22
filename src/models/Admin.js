@@ -2,12 +2,7 @@ const mongoose = require("mongoose");
 
 const adminSchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      unique: true,
-    },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true },
     permissions: [
       {
         type: String,
@@ -22,19 +17,7 @@ const adminSchema = new mongoose.Schema(
       },
     ],
   },
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
-  }
+  { timestamps: true }
 );
-
-// Populate user data when querying admins
-adminSchema.pre(/^find/, function () {
-  this.populate({
-    path: "user",
-    select: "fullName email phone role",
-  });
-});
 
 module.exports = mongoose.model("Admin", adminSchema);

@@ -1,9 +1,10 @@
-const { User, Patient } = require("../models");
+const { User, Patient, Doctor } = require("../models");
 const { generateToken } = require("../middlewares/auth");
+const bcrypt = require("bcryptjs");
 
 const login = async (req, res) => {
   try {
-    console.log('🔐 Login request body:', req.body);
+    console.log("🔐 Login request body:", req.body);
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -13,7 +14,7 @@ const login = async (req, res) => {
       });
     }
 
-    const user = await User.findByEmail(email);
+    const user = await User.findOne({ email }).select("+password");
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -28,7 +29,7 @@ const login = async (req, res) => {
       });
     }
 
-    const isPasswordValid = await user.comparePassword(password);
+    const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
@@ -166,5 +167,5 @@ const logout = async (req, res) => {
 module.exports = {
   login,
   getMe,
-  logout
+  logout,
 };

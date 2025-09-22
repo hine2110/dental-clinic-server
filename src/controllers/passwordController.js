@@ -1,6 +1,7 @@
 const { User, Verification } = require("../models");
 const { sendPasswordResetEmail } = require("../services/emailService");
-const crypto = require('crypto');
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 
 const changePassword = async (req, res) => {
   try {
@@ -24,7 +25,10 @@ const changePassword = async (req, res) => {
     const user = await User.findById(req.user._id).select("+password");
 
     // Verify current password
-    const isCurrentPasswordValid = await user.comparePassword(currentPassword);
+    const isCurrentPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
     if (!isCurrentPasswordValid) {
       return res.status(400).json({
         success: false,
@@ -32,8 +36,11 @@ const changePassword = async (req, res) => {
       });
     }
 
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
     // Update password
-    user.password = newPassword;
+    user.password = hashedPassword;
     await user.save();
 
     res.json({
@@ -56,7 +63,7 @@ const forgotPassword = async (req, res) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: "Email is required"
+        message: "Email is required",
       });
     }
 
@@ -64,22 +71,22 @@ const forgotPassword = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
     // Tạo reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
     // Lưu reset token
     await Verification.findOneAndUpdate(
-      { email, type: 'password_reset' },
+      { email, type: "password_reset" },
       {
         email,
         code: resetToken,
-        type: 'password_reset',
+        type: "password_reset",
         expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 giờ
-        isUsed: false
+        isUsed: false,
       },
       { upsert: true, new: true }
     );
@@ -89,13 +96,13 @@ const forgotPassword = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Password reset email sent successfully"
+      message: "Password reset email sent successfully",
     });
   } catch (error) {
     console.error("Forgot password error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to send password reset email"
+      message: "Failed to send password reset email",
     });
   }
 };
@@ -107,28 +114,28 @@ const resetPassword = async (req, res) => {
     if (!token || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Token and new password are required"
+        message: "Token and new password are required",
       });
     }
 
     if (newPassword.length < 6) {
       return res.status(400).json({
         success: false,
-        message: "New password must be at least 6 characters long"
+        message: "New password must be at least 6 characters long",
       });
     }
 
     const verification = await Verification.findOne({
       code: token,
-      type: 'password_reset',
+      type: "password_reset",
       isUsed: false,
-      expiresAt: { $gt: new Date() }
+      expiresAt: { $gt: new Date() },
     });
 
     if (!verification) {
       return res.status(400).json({
         success: false,
-        message: "Invalid or expired reset token"
+        message: "Invalid or expired reset token",
       });
     }
 
@@ -137,11 +144,13 @@ const resetPassword = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
-    user.password = newPassword;
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    user.password = hashedPassword;
     await user.save();
 
     // Đánh dấu token đã sử dụng
@@ -150,13 +159,13 @@ const resetPassword = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Password reset successfully"
+      message: "Password reset successfully",
     });
   } catch (error) {
     console.error("Reset password error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to reset password"
+      message: "Failed to reset password",
     });
   }
 };
@@ -167,27 +176,27 @@ const checkResetToken = async (req, res) => {
 
     const verification = await Verification.findOne({
       code: token,
-      type: 'password_reset',
+      type: "password_reset",
       isUsed: false,
-      expiresAt: { $gt: new Date() }
+      expiresAt: { $gt: new Date() },
     });
 
     if (!verification) {
       return res.status(400).json({
         success: false,
-        message: "Invalid or expired reset token"
+        message: "Invalid or expired reset token",
       });
     }
 
     res.json({
       success: true,
-      message: "Reset token is valid"
+      message: "Reset token is valid",
     });
   } catch (error) {
     console.error("Check reset token error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to check reset token"
+      message: "Failed to check reset token",
     });
   }
 };
@@ -196,5 +205,5 @@ module.exports = {
   changePassword,
   forgotPassword,
   resetPassword,
-  checkResetToken
+  checkResetToken,
 };
