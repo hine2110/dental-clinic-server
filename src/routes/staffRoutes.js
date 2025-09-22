@@ -72,7 +72,7 @@ router.post("/invoices",
   cashierController.createInvoice
 );
 
-// Xử lý thanh toán
+// Xử lý thanh toán hóa đơn
 router.post("/invoices/:invoiceId/payment", 
   checkPermission("handleInvoices"),
   cashierController.processPayment

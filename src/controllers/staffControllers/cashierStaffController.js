@@ -10,7 +10,7 @@ const DispenseMedicine = require("../../models/DispenseMedicine");
 const getPrescriptions = async (req, res) => {
   try {
     const { status = "active" } = req.query;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     const prescriptions = await Prescription.find({ 
       status,
@@ -40,7 +40,7 @@ const getPrescriptions = async (req, res) => {
 const dispenseMedicine = async (req, res) => {
   try {
     const { prescriptionId, medicineData } = req.body;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     const prescription = await Prescription.findById(prescriptionId);
     if (!prescription) {
@@ -50,7 +50,7 @@ const dispenseMedicine = async (req, res) => {
       });
     }
 
-    if (prescription.staff.toString() !== staffId) {
+    if (prescription.staff.toString() !== staffId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Bạn không có quyền xử lý đơn thuốc này"
@@ -84,7 +84,9 @@ const dispenseMedicine = async (req, res) => {
       await medicine.save();
 
       // Tạo bản ghi bóc thuốc
+      const dispenseId = `DISP${Date.now()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
       const dispenseRecord = new DispenseMedicine({
+        dispenseId,
         prescription: prescriptionId,
         medicine: medicineId,
         staff: staffId,
@@ -125,8 +127,8 @@ const dispenseMedicine = async (req, res) => {
 // 3. Tạo hóa đơn từ đơn thuốc
 const createInvoice = async (req, res) => {
   try {
-    const { prescriptionId, paymentMethod = "cash" } = req.body;
-    const staffId = req.user.id;
+    const { prescriptionId, paymentMethod = "cash", includeMedicines = true } = req.body;
+    const staffId = req.staff._id;
 
     const prescription = await Prescription.findById(prescriptionId)
       .populate('services')
@@ -145,20 +147,27 @@ const createInvoice = async (req, res) => {
       totalServiceCost = prescription.services.reduce((sum, service) => sum + service.price, 0);
     }
 
-    // Tính tổng tiền thuốc từ DispenseMedicine
-    const dispensedMedicines = await DispenseMedicine.find({ 
-      prescription: prescriptionId,
-      status: "dispensed"
-    });
-
+    // Tính tổng tiền thuốc từ DispenseMedicine (chỉ khi includeMedicines = true)
     let totalMedicineCost = 0;
-    if (dispensedMedicines.length > 0) {
-      totalMedicineCost = dispensedMedicines.reduce((sum, med) => sum + med.totalPrice, 0);
+    let dispensedMedicines = [];
+    
+    if (includeMedicines) {
+      dispensedMedicines = await DispenseMedicine.find({ 
+        prescription: prescriptionId,
+        status: "dispensed"
+      });
+
+      if (dispensedMedicines.length > 0) {
+        totalMedicineCost = dispensedMedicines.reduce((sum, med) => sum + med.totalPrice, 0);
+      }
     }
 
     const totalAmount = totalServiceCost + totalMedicineCost;
 
+    // Tạo invoiceId tự động
+    const invoiceId = `INV${Date.now()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
     const invoice = new Invoice({
+      invoiceId,
       appointment: prescription.appointment,
       staff: staffId,
       patient: prescription.patient,
@@ -176,7 +185,9 @@ const createInvoice = async (req, res) => {
         invoice,
         totalServiceCost,
         totalMedicineCost,
-        totalAmount
+        totalAmount,
+        includeMedicines,
+        dispensedMedicines: includeMedicines ? dispensedMedicines : []
       }
     });
   } catch (error) {
@@ -188,11 +199,12 @@ const createInvoice = async (req, res) => {
   }
 };
 
-// 4. Xử lý thanh toán
+// 4. Xử lý thanh toán hóa đơn
 const processPayment = async (req, res) => {
   try {
-    const { invoiceId, paymentMethod = "cash", paidAmount } = req.body;
-    const staffId = req.user.id;
+    const { invoiceId } = req.params;
+    const { paymentMethod = "cash", paidAmount } = req.body;
+    const staffId = req.staff._id;
 
     const invoice = await Invoice.findById(invoiceId);
     if (!invoice) {
@@ -202,26 +214,29 @@ const processPayment = async (req, res) => {
       });
     }
 
-    if (invoice.staff.toString() !== staffId) {
+    if (invoice.staff.toString() !== staffId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Bạn không có quyền xử lý hóa đơn này"
       });
     }
 
-    let paymentStatus;
-    if (paidAmount >= invoice.total) {
-      paymentStatus = "paid";
-    } else if (paidAmount > 0) {
-      paymentStatus = "partial";
-    } else {
+    if (!paidAmount || paidAmount <= 0) {
       return res.status(400).json({
         success: false,
         message: "Số tiền thanh toán phải lớn hơn 0"
       });
     }
 
-    invoice.paymentStatus = paymentStatus;
+    if (paidAmount < invoice.total) {
+      return res.status(400).json({
+        success: false,
+        message: "Số tiền thanh toán phải bằng tổng tiền hóa đơn để hoàn thành thanh toán"
+      });
+    }
+
+    // Chỉ chấp nhận thanh toán đầy đủ
+    invoice.paymentStatus = "paid";
     invoice.paymentMethod = paymentMethod;
     await invoice.save();
 
@@ -230,8 +245,8 @@ const processPayment = async (req, res) => {
       message: "Xử lý thanh toán thành công",
       data: {
         invoice,
-        paymentStatus,
-        remainingAmount: invoice.total - paidAmount
+        paymentStatus: "paid",
+        remainingAmount: 0
       }
     });
   } catch (error) {
@@ -247,7 +262,7 @@ const processPayment = async (req, res) => {
 const getInvoices = async (req, res) => {
   try {
     const { paymentStatus, startDate, endDate } = req.query;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     let query = { staff: staffId };
     if (paymentStatus) query.paymentStatus = paymentStatus;
@@ -281,7 +296,7 @@ const getInvoices = async (req, res) => {
 const getPrescriptionDetail = async (req, res) => {
   try {
     const { prescriptionId } = req.params;
-    const staffId = req.user.id;
+    const staffId = req.staff._id;
 
     const prescription = await Prescription.findById(prescriptionId)
       .populate('appointment')
@@ -296,7 +311,7 @@ const getPrescriptionDetail = async (req, res) => {
       });
     }
 
-    if (prescription.staff.toString() !== staffId) {
+    if (prescription.staff.toString() !== staffId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Bạn không có quyền xem đơn thuốc này"

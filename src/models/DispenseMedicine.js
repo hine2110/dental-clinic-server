@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const dispenseMedicineSchema = new mongoose.Schema(
   {
-    dispenseId: { type: String, unique: true },
+    dispenseId: { type: String },
     prescription: { type: mongoose.Schema.Types.ObjectId, ref: "Prescription", required: true },
     medicine: { type: mongoose.Schema.Types.ObjectId, ref: "Medicine", required: true },
     staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff", required: true },
