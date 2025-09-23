@@ -1,5 +1,6 @@
 const Doctor = require("../models/Doctor");
 const DoctorSchedule = require("../models/DoctorSchedule");
+
 const StaffSchedule = require("../models/StaffSchedule");
 const Location = require("../models/Location");
 const Appointment = require("../models/Appointment");
@@ -17,7 +18,9 @@ const {
 // 1. Quản lý lịch làm việc của doctor
 const manageDoctorSchedule = async (req, res) => {
   try {
+
     const { doctorId, locationId, date, startTime, endTime, isAvailable = true, notes } = req.body;
+
     const staffId = req.staff._id;
 
     // Kiểm tra doctor tồn tại
@@ -28,6 +31,7 @@ const manageDoctorSchedule = async (req, res) => {
         message: "Không tìm thấy bác sĩ"
       });
     }
+
 
     // Kiểm tra location tồn tại
     const location = await Location.findById(locationId);
@@ -144,9 +148,11 @@ const manageStaffSchedule = async (req, res) => {
       isAvailable,
       notes,
       createdBy: createdByStaffId
+
     });
 
     await schedule.save();
+
 
     // Populate thông tin để trả về
     await schedule.populate([
@@ -157,6 +163,7 @@ const manageStaffSchedule = async (req, res) => {
 
     // Gửi thông báo cho staff được xếp lịch
     await sendStaffScheduleNotification(schedule, createdByStaffId);
+
 
     res.status(201).json({
       success: true,
@@ -172,6 +179,7 @@ const manageStaffSchedule = async (req, res) => {
   }
 };
 
+
 // 3. Xem lịch làm việc của doctor
 const getDoctorSchedules = async (req, res) => {
   try {
@@ -181,19 +189,23 @@ const getDoctorSchedules = async (req, res) => {
     if (doctorId) query.doctor = doctorId;
     if (locationId) query.location = locationId;
     
+
     if (date) {
       const startDate = new Date(date);
       const endDate = new Date(date);
       endDate.setDate(endDate.getDate() + 1);
       query.date = { $gte: startDate, $lt: endDate };
+
     } else if (startDate && endDate) {
       query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
     }
     
+
     if (status !== undefined) query.isAvailable = status === 'available';
 
     const schedules = await DoctorSchedule.find(query)
       .populate('doctor', 'doctorId user')
+
       .populate('location', 'name address')
       .populate('createdBy', 'user')
       .sort({ date: 1, startTime: 1 });
@@ -259,6 +271,7 @@ const acceptPatientBooking = async (req, res) => {
     const { status = "confirmed" } = req.body; // Status từ body
     const staffId = req.staff._id; // Sử dụng staff ID từ middleware
 
+
     console.log("=== ACCEPT PATIENT BOOKING ===");
     console.log("AppointmentId:", appointmentId);
     console.log("Status:", status);
@@ -268,6 +281,7 @@ const acceptPatientBooking = async (req, res) => {
       .populate('patient', 'user')
       .populate('doctor', 'doctorId user');
       
+
     if (!appointment) {
       return res.status(404).json({
         success: false,
@@ -282,9 +296,11 @@ const acceptPatientBooking = async (req, res) => {
     appointment.staff = staffId;
     await appointment.save();
 
+
     console.log("Appointment updated successfully");
 
     // Gửi thông báo cho bệnh nhân và doctor
+
     await sendBookingNotification(appointment, staffId);
 
     res.status(200).json({
@@ -293,7 +309,9 @@ const acceptPatientBooking = async (req, res) => {
       data: appointment
     });
   } catch (error) {
+
     console.error("Error in acceptPatientBooking:", error);
+
     res.status(500).json({
       success: false,
       message: "Lỗi khi cập nhật lịch hẹn",
@@ -382,6 +400,7 @@ const getAppointments = async (req, res) => {
 };
 
 // ==================== HELPER FUNCTIONS ====================
+
 
 // 1. Gửi thông báo cho doctor khi có DoctorSchedule mới
 const sendDoctorScheduleNotification = async (schedule, staffId) => {
@@ -923,6 +942,7 @@ const checkRemainingWorkingHours = async (req, res) => {
       message: "Lỗi khi kiểm tra giờ làm việc còn lại",
       error: error.message
     });
+
   }
 };
 

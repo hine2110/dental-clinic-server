@@ -1,20 +1,9 @@
-// Validation utilities for user input
 
-/**
- * Validate email format
- * @param {string} email 
- * @returns {boolean}
- */
 const validateEmail = (email) => {
   const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
   return emailRegex.test(email);
 };
 
-/**
- * Validate password strength
- * @param {string} password 
- * @returns {object} { isValid: boolean, message: string }
- */
 const validatePassword = (password) => {
   if (!password) {
     return { isValid: false, message: "Password is required" };
@@ -25,21 +14,11 @@ const validatePassword = (password) => {
   return { isValid: true, message: "Password is valid" };
 };
 
-/**
- * Validate phone number format
- * @param {string} phone 
- * @returns {boolean}
- */
 const validatePhone = (phone) => {
   const phoneRegex = /^[0-9+\-\s()]+$/;
   return phoneRegex.test(phone);
 };
 
-/**
- * Validate full name
- * @param {string} fullName 
- * @returns {object} { isValid: boolean, message: string }
- */
 const validateFullName = (fullName) => {
   if (!fullName || fullName.trim().length === 0) {
     return { isValid: false, message: "Full name is required" };
@@ -50,21 +29,11 @@ const validateFullName = (fullName) => {
   return { isValid: true, message: "Full name is valid" };
 };
 
-/**
- * Validate user role
- * @param {string} role 
- * @returns {boolean}
- */
 const validateRole = (role) => {
   const validRoles = ["admin", "doctor", "receptionist", "patient"];
   return validRoles.includes(role);
 };
 
-/**
- * Validate user registration data
- * @param {object} userData 
- * @returns {object} { isValid: boolean, errors: array }
- */
 const validateUserRegistration = (userData) => {
   const errors = [];
   const { email, password, fullName, phone, role } = userData;
@@ -112,11 +81,54 @@ const validateUserRegistration = (userData) => {
   };
 };
 
+//validate patient profile
+const validatePatientProfile = (profileData) => {
+  const errors = [];
+  const { basicInfo, contactInfo } = profileData;
+
+  //validate basic info
+  if (!basicInfo?.fullName || basicInfo.fullName.trim() === '') {
+    errors.push("Full name is required");
+  }
+  
+  if (!basicInfo?.dateOfBirth || basicInfo.dateOfBirth.trim() === '') {
+    errors.push("Date of birth is required");
+  }
+
+  if (!basicInfo?.gender || basicInfo.gender.trim() === '') {
+    errors.push("Gender is required");
+  }
+
+  //cccd
+  if (!basicInfo?.idCard?.idNumber || basicInfo.idCard.idNumber.trim() === '') {
+    errors.push("ID card number is required");
+  }
+
+  //contact info
+  if (!contactInfo?.phone || contactInfo.phone.trim() === '') {
+    errors.push("Phone number is required");
+  }
+  
+  if (!contactInfo?.email || contactInfo.email.trim() === '') {
+    errors.push("Email is required");
+  }
+
+  if (!contactInfo?.address?.city || contactInfo.address.city.trim() === '') {
+    errors.push("City is required");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
+
 module.exports = {
   validateEmail,
   validatePassword,
   validatePhone,
   validateFullName,
   validateRole,
-  validateUserRegistration
+  validateUserRegistration,
+  validatePatientProfile
 };
