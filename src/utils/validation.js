@@ -81,11 +81,57 @@ const validateUserRegistration = (userData) => {
   };
 };
 
+//validate patient profile
+const validatePatientProfile = (profileData) => {
+  const errors = [];
+  const { basicInfo, contactInfo } = profileData;
+
+  //validate basic info
+  if (!basicInfo?.fullName) {
+    errors.push("Full name is required");
+  }
+  
+  if (!basicInfo?.dateOfBirth) {
+    errors.push("Date of birth is required");
+  }
+
+  if (!basicInfo?.gender) {
+    errors.push("Gender is required");
+  }
+
+  if (!basicInfo?.idCard?.frontImage) {
+    errors.push("ID card front image is required");
+  }
+
+  if (!basicInfo?.idCard?.backImage) {
+    errors.push("ID card back image is required");
+  }
+
+  //contact info
+  if (!contactInfo?.phone) {
+    errors.push("Phone number is required");
+  }
+  
+  if (!contactInfo?.email) {
+    errors.push("Email is required");
+  }
+
+  if (!contactInfo?.address?.city) {
+    errors.push("City is required")
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
+
 module.exports = {
   validateEmail,
   validatePassword,
   validatePhone,
   validateFullName,
   validateRole,
-  validateUserRegistration
+  validateUserRegistration,
+  validatePatientProfile
 };
