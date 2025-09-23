@@ -19,27 +19,12 @@ const checkAdminRole = (req, res, next) => {
 
 router.use(checkAdminRole);
 
-// // ==================== DASHBOARD & THỐNG KÊ ====================
+// ==================== QUẢN LÝ USERS ====================
 
-// // GET /api/admin/dashboard - Xem thống kê tổng quan
-// router.get("/dashboard", adminController.getDashboardStats);
+// GET /api/admin/users - Lấy danh sách tất cả users
+router.get("/users", adminController.getAllUsers);
 
-// // ==================== QUẢN LÝ THIẾT BỊ ====================
-
-// // GET /api/admin/equipment/reports - Xem tất cả báo cáo thiết bị
-// router.get("/equipment/reports", adminController.getEquipmentReports);
-
-// // PUT /api/admin/equipment/:equipmentId/status - Cập nhật trạng thái thiết bị
-// router.put("/equipment/:equipmentId/status", adminController.updateEquipmentStatus);
-
-// // ==================== QUẢN LÝ HÓA ĐƠN ====================
-
-// // GET /api/admin/invoices - Xem tất cả hóa đơn
-// router.get("/invoices", adminController.getAllInvoices);
-
-// // ==================== QUẢN LÝ ĐƠN THUỐC ====================
-
-// // GET /api/admin/prescriptions - Xem tất cả đơn thuốc
-// router.get("/prescriptions", adminController.getAllPrescriptions);
+// POST /api/admin/create-account - Tạo tài khoản staff/doctor
+router.post("/create-account", adminController.createStaffAccount);
 
 module.exports = router;
