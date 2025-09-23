@@ -18,11 +18,10 @@ const patientSchema = new mongoose.Schema(
         enum: ["male", "female", "other"],
         required: true
       },
-      // Ảnh CCCD
+      
+      //nhap cccd
       idCard: { 
-        frontImage: { type: String, required: true },
-        backImage: { type: String, required: true },
-        idNumber: { type: String, trim: true }
+        idNumber: { type: String, required: true },
       }
     },
 
