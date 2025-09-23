@@ -1,4 +1,4 @@
-const { User, Staff, Doctor } = require("../models");
+const { User, Staff, Doctor, Admin } = require("../models");
 const bcrypt = require("bcryptjs");
 
 const createStaffAccount = async (req, res) => {
@@ -112,6 +112,134 @@ const createStaffAccount = async (req, res) => {
   }
 };
 
+// Get all users with their profiles
+const getAllUsers = async (req, res) => {
+  try {
+    // Check if user has admin permissions
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Permission denied. Only admin can view all users.",
+      });
+    }
+    // Extract query parameters for filtering and pagination
+    const {
+      role,
+      isActive,
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = req.query;
+
+    // Build filter object
+    const filter = {};
+
+    // Filter by role if specified
+    if (role && role !== "all") {
+      filter.role = role;
+    }
+
+    // Filter by active status if specified
+    if (isActive !== undefined) {
+      filter.isActive = isActive === "true";
+    }
+
+    // Filter by search term (name or email)
+    if (search) {
+      filter.$or = [
+        { fullName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === "desc" ? -1 : 1;
+
+    // Get users with pagination and sorting
+    // If limit is set to 'all' or 0, return all users
+    let userQuery = User.find(filter)
+      .select("-password") // Exclude password field
+      .sort(sortOptions);
+
+    if (limit !== "all" && parseInt(limit) > 0) {
+      userQuery = userQuery.skip(skip).limit(parseInt(limit));
+    }
+
+    const users = await userQuery;
+
+    // Get total count for pagination
+    const totalUsers = await User.countDocuments(filter);
+
+    // Enhance user data with additional profile information
+    const enhancedUsers = await Promise.all(
+      users.map(async (user) => {
+        const userObj = user.toObject();
+
+        // Add profile-specific information based on role
+        if (user.role === "doctor") {
+          const doctorProfile = await Doctor.findOne({ user: user._id }).select(
+            "doctorId specializations consultationFee license"
+          );
+          userObj.doctorProfile = doctorProfile;
+        } else if (user.role === "staff") {
+          const staffProfile = await Staff.findOne({ user: user._id }).select(
+            "staffType permissions"
+          );
+          userObj.staffProfile = staffProfile;
+        } else if (user.role === "admin") {
+          const adminProfile = await Admin.findOne({ user: user._id }).select(
+            "permissions"
+          );
+          userObj.adminProfile = adminProfile;
+        }
+
+        return userObj;
+      })
+    );
+
+    // Calculate pagination info
+    const actualLimit = limit === "all" ? totalUsers : parseInt(limit);
+    const totalPages =
+      limit === "all" ? 1 : Math.ceil(totalUsers / parseInt(limit));
+    const hasNextPage = limit === "all" ? false : parseInt(page) < totalPages;
+    const hasPrevPage = limit === "all" ? false : parseInt(page) > 1;
+
+    res.status(200).json({
+      success: true,
+      message: "Users retrieved successfully",
+      data: enhancedUsers,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalUsers,
+        hasNextPage,
+        hasPrevPage,
+        limit: actualLimit,
+      },
+      filters: {
+        role: role || "all",
+        isActive: isActive || "all",
+        search: search || "",
+        sortBy,
+        sortOrder,
+      },
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server error retrieving users",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
 module.exports = {
   createStaffAccount,
+  getAllUsers,
 };
