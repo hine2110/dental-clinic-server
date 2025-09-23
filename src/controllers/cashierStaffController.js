@@ -1,8 +1,8 @@
-const Prescription = require("../../models/Prescription");
-const Medicine = require("../../models/Medicine");
-const Service = require("../../models/Service");
-const Invoice = require("../../models/Invoice");
-const DispenseMedicine = require("../../models/DispenseMedicine");
+const Prescription = require("../models/Prescription");
+const Medicine = require("../models/Medicine");
+const Service = require("../models/Service");
+const Invoice = require("../models/Invoice");
+const DispenseMedicine = require("../models/DispenseMedicine");
 
 // ==================== CASHIER FUNCTIONS ====================
 
