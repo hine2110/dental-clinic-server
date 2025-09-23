@@ -1,8 +1,8 @@
-const Doctor = require("../../models/Doctor");
-const DoctorSchedule = require("../../models/DoctorSchedule");
-const Appointment = require("../../models/Appointment");
-const Notification = require("../../models/Notification");
-const Staff = require("../../models/Staff");
+const Doctor = require("../models/Doctor");
+const DoctorSchedule = require("../models/DoctorSchedule");
+const Appointment = require("../models/Appointment");
+const Notification = require("../models/Notification");
+const Staff = require("../models/Staff");
 
 // ==================== RECEPTIONIST FUNCTIONS ====================
 

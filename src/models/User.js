@@ -43,6 +43,10 @@ const userSchema = new mongoose.Schema(
     },
     avatar: { type: String },
     lastLogin: { type: Date },
+    isProfileComplete: {
+      type: Boolean,
+      default: false
+    },
   },
   {
     timestamps: true,

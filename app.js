@@ -30,6 +30,7 @@ require('./src/controllers/googleController');
 const authRoutes = require('./src/routes/authRoutes');
 const staffRoutes = require('./src/routes/staffRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
+const patientRoutes = require('./src/routes/patientRoutes');
 
 // Basic route
 app.get('/', (req, res) => {
@@ -60,6 +61,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/patient', patientRoutes);
 
 // 404 handler - must be last
 app.use((req, res) => {

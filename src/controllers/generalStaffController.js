@@ -1,6 +1,6 @@
-const Equipment = require("../../models/Equipment");
-const EquipmentIssue = require("../../models/EquipmentIssue");
-const Medicine = require("../../models/Medicine");
+const Equipment = require("../models/Equipment");
+const EquipmentIssue = require("../models/EquipmentIssue");
+const Medicine = require("../models/Medicine");
 
 // ==================== GENERAL FUNCTIONS ====================
 
