@@ -87,37 +87,34 @@ const validatePatientProfile = (profileData) => {
   const { basicInfo, contactInfo } = profileData;
 
   //validate basic info
-  if (!basicInfo?.fullName) {
+  if (!basicInfo?.fullName || basicInfo.fullName.trim() === '') {
     errors.push("Full name is required");
   }
   
-  if (!basicInfo?.dateOfBirth) {
+  if (!basicInfo?.dateOfBirth || basicInfo.dateOfBirth.trim() === '') {
     errors.push("Date of birth is required");
   }
 
-  if (!basicInfo?.gender) {
+  if (!basicInfo?.gender || basicInfo.gender.trim() === '') {
     errors.push("Gender is required");
   }
 
-  if (!basicInfo?.idCard?.frontImage) {
-    errors.push("ID card front image is required");
-  }
-
-  if (!basicInfo?.idCard?.backImage) {
-    errors.push("ID card back image is required");
+  //cccd
+  if (!basicInfo?.idCard?.idNumber || basicInfo.idCard.idNumber.trim() === '') {
+    errors.push("ID card number is required");
   }
 
   //contact info
-  if (!contactInfo?.phone) {
+  if (!contactInfo?.phone || contactInfo.phone.trim() === '') {
     errors.push("Phone number is required");
   }
   
-  if (!contactInfo?.email) {
+  if (!contactInfo?.email || contactInfo.email.trim() === '') {
     errors.push("Email is required");
   }
 
-  if (!contactInfo?.address?.city) {
-    errors.push("City is required")
+  if (!contactInfo?.address?.city || contactInfo.address.city.trim() === '') {
+    errors.push("City is required");
   }
 
   return {

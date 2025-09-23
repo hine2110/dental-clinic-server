@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const receptionistController = require("../controllers/staffControllers/receptionistStaffController");
-const cashierController = require("../controllers/staffControllers/cashierStaffController");
-const generalController = require("../controllers/staffControllers/generalStaffController");
+const receptionistController = require("../controllers/receptionistStaffController");
+const cashierController = require("../controllers/cashierStaffController");
+const generalController = require("../controllers/generalStaffController");
 const { authenticate } = require("../middlewares/auth");
 const { checkStaffRole, checkPermission } = require("../middlewares/staff");
 
