@@ -14,14 +14,71 @@ router.use(checkStaffRole);
 // ==================== RECEPTIONIST ROUTES ====================
 
 // Quản lý lịch làm việc của doctor
-router.post("/schedules", 
+router.post("/schedules/doctors", 
   checkPermission("manageDoctorSchedule"),
   receptionistController.manageDoctorSchedule
 );
 
-router.get("/schedules", 
+router.get("/schedules/doctors", 
   checkPermission("manageDoctorSchedule"),
   receptionistController.getDoctorSchedules
+);
+
+// Quản lý lịch làm việc của staff
+router.post("/schedules/staff", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.manageStaffSchedule
+);
+
+router.get("/schedules/staff", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.getStaffSchedules
+);
+
+// Thống kê lịch làm việc của Doctor
+router.get("/schedules/stats/doctors", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.getScheduleStatsDoctor
+);
+
+// Thống kê lịch làm việc của Staff
+router.get("/schedules/stats/staff", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.getScheduleStatsStaff
+);
+
+// Thống kê giờ làm việc của doctor
+router.get("/schedules/doctors/working-hours", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.getDoctorWorkingHours
+);
+
+// Thống kê giờ làm việc của staff
+router.get("/schedules/staff/working-hours", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.getStaffWorkingHours
+);
+
+// Kiểm tra giờ làm việc còn lại
+router.get("/schedules/remaining-hours", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.checkRemainingWorkingHours
+);
+
+// Quản lý cơ sở (Location)
+router.get("/locations", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.getLocations
+);
+
+router.post("/locations", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.createLocation
+);
+
+router.put("/locations/:locationId", 
+  checkPermission("manageDoctorSchedule"),
+  receptionistController.updateLocation
 );
 
 // Chấp nhận đặt lịch của bệnh nhân

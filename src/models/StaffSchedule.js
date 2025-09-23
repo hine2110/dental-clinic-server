@@ -1,10 +1,10 @@
 const mongoose = require("mongoose");
 
-const doctorScheduleSchema = new mongoose.Schema(
+const staffScheduleSchema = new mongoose.Schema(
   {
-    doctor: { 
+    staff: { 
       type: mongoose.Schema.Types.ObjectId, 
-      ref: "Doctor", 
+      ref: "Staff", 
       required: true 
     },
     location: { 
@@ -32,28 +32,30 @@ const doctorScheduleSchema = new mongoose.Schema(
       type: String, 
       trim: true 
     },
+    // Thời gian nghỉ trưa cố định
+    breakTime: {
+      startTime: { type: String, default: "11:30" },
+      endTime: { type: String, default: "13:00" }
+    },
+    // Người tạo lịch
     createdBy: { 
       type: mongoose.Schema.Types.ObjectId, 
       ref: "Staff", 
       required: true 
-    },
-    breakTime: {
-      startTime: { type: String, default: "11:30" },
-      endTime: { type: String, default: "13:00" }
     }
   },
   { timestamps: true }
 );
 
 // Index để tìm kiếm nhanh
-doctorScheduleSchema.index({ doctor: 1, date: 1 });
-doctorScheduleSchema.index({ location: 1, date: 1 });
-doctorScheduleSchema.index({ date: 1, startTime: 1 });
+staffScheduleSchema.index({ staff: 1, date: 1 });
+staffScheduleSchema.index({ location: 1, date: 1 });
+staffScheduleSchema.index({ date: 1, startTime: 1 });
 
 // Virtual: tính số giờ làm việc (sử dụng utility function)
-doctorScheduleSchema.virtual('workingHours').get(function() {
+staffScheduleSchema.virtual('workingHours').get(function() {
   const { calculateWorkingHours } = require('../utils/timeValidation');
   return calculateWorkingHours(this.startTime, this.endTime);
 });
 
-module.exports = mongoose.model("DoctorSchedule", doctorScheduleSchema);
+module.exports = mongoose.model("StaffSchedule", staffScheduleSchema);
