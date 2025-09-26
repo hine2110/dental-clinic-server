@@ -36,11 +36,8 @@ const changePassword = async (req, res) => {
       });
     }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-
-    // Update password
-    user.password = hashedPassword;
+    // Assign plain new password; pre-save hook will hash it
+    user.password = newPassword;
     await user.save();
 
     res.json({
@@ -140,7 +137,7 @@ const resetPassword = async (req, res) => {
     }
 
     // Tìm user và cập nhật mật khẩu
-    const user = await User.findOne({ email: verification.email });
+    const user = await User.findOne({ email: verification.email }).select("+password");
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -148,9 +145,8 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-    user.password = hashedPassword;
+    // Assign plain new password; pre-save hook will hash it
+    user.password = newPassword;
     await user.save();
 
     // Đánh dấu token đã sử dụng
