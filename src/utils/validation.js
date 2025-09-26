@@ -59,11 +59,10 @@ const validateUserRegistration = (userData) => {
     errors.push(fullNameValidation.message);
   }
 
-  // Validate phone (only if not Google user)
-  if (!userData.googleId) {
-    if (!phone) {
-      errors.push("Phone number is required");
-    } else if (!validatePhone(phone)) {
+  // Phone is OPTIONAL for normal registration.
+  // If provided, ensure valid format; if absent, do not error.
+  if (phone) {
+    if (!validatePhone(phone)) {
       errors.push("Please provide a valid phone number");
     }
   }
