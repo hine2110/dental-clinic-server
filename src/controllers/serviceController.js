@@ -3,13 +3,13 @@ const { Service } = require("../models");
 // ==================== CREATE SERVICE ====================
 const createService = async (req, res) => {
   try {
-    const { name, description, category, price, duration } = req.body;
+    const { name, thumbnail, description, category, price } = req.body;
 
     // Validate required fields
-    if (!name || !category || !price || !duration) {
+    if (!name || !category || !price) {
       return res.status(400).json({
         success: false,
-        message: "Name, category, price, and duration are required",
+        message: "Name, category, and price are required",
       });
     }
 
@@ -22,20 +22,13 @@ const createService = async (req, res) => {
       });
     }
 
-    // Generate serviceId
-    const serviceId = `SVC${Date.now()}${Math.random()
-      .toString(36)
-      .slice(-4)
-      .toUpperCase()}`;
-
     // Create service
     const service = await Service.create({
-      serviceId,
       name,
+      thumbnail,
       description,
       category,
-      price,
-      duration,
+      price: parseFloat(price),
     });
 
     res.status(201).json({
