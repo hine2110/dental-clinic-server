@@ -1,5 +1,4 @@
 const { User, Staff, Doctor, Admin } = require("../models");
-const bcrypt = require("bcryptjs");
 
 const createStaffAccount = async (req, res) => {
   try {
@@ -36,13 +35,10 @@ const createStaffAccount = async (req, res) => {
     const plainPassword =
       temporaryPassword || `temp${Math.random().toString(36).slice(-8)}`;
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(plainPassword, 12);
-
     // Create user account
     const user = await User.create({
       email,
-      password: hashedPassword,
+      password: plainPassword,
       role,
       fullName: `${firstName} ${lastName}`.trim(),
       phone,
