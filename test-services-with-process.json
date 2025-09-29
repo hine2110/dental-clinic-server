@@ -1,0 +1,167 @@
+[
+  {
+    "name": "General Dental Checkup",
+    "thumbnail": "",
+    "description": "Comprehensive oral health examination including teeth, gums, and overall dental health assessment.",
+    "category": "Examination",
+    "price": 200000,
+    "process": [
+      {
+        "step": 1,
+        "title": "Initial Consultation",
+        "description": "Review your medical history and discuss any concerns or symptoms you may have"
+      },
+      {
+        "step": 2,
+        "title": "Visual Examination",
+        "description": "Thorough examination of your teeth, gums, and oral tissues using dental instruments"
+      },
+      {
+        "step": 3,
+        "title": "X-ray Imaging",
+        "description": "Take necessary X-rays to check for hidden problems like cavities or bone loss"
+      },
+      {
+        "step": 4,
+        "title": "Treatment Recommendations",
+        "description": "Provide detailed report and recommendations for any necessary treatments"
+      }
+    ],
+    "isActive": true
+  },
+  {
+    "name": "Teeth Cleaning",
+    "thumbnail": "",
+    "description": "Professional teeth cleaning to remove tartar, plaque, and stains for optimal oral hygiene.",
+    "category": "Hygiene",
+    "price": 300000,
+    "process": [
+      {
+        "step": 1,
+        "title": "Pre-Cleaning Assessment",
+        "description": "Examine your teeth and gums to determine the extent of cleaning needed"
+      },
+      {
+        "step": 2,
+        "title": "Plaque and Tartar Removal",
+        "description": "Use specialized tools to remove hardened plaque and tartar from teeth surfaces"
+      },
+      {
+        "step": 3,
+        "title": "Teeth Polishing",
+        "description": "Polish teeth to remove surface stains and create a smooth, clean surface"
+      },
+      {
+        "step": 4,
+        "title": "Fluoride Treatment",
+        "description": "Apply fluoride to strengthen teeth and prevent future decay"
+      }
+    ],
+    "isActive": true
+  },
+  {
+    "name": "Teeth Whitening",
+    "thumbnail": "",
+    "description": "Professional teeth whitening treatment to brighten your smile and boost confidence.",
+    "category": "Cosmetic",
+    "price": 800000,
+    "process": [
+      {
+        "step": 1,
+        "title": "Color Assessment",
+        "description": "Evaluate your current tooth color and determine the best whitening approach"
+      },
+      {
+        "step": 2,
+        "title": "Teeth Preparation",
+        "description": "Clean teeth thoroughly and protect gums before whitening treatment"
+      },
+      {
+        "step": 3,
+        "title": "Whitening Application",
+        "description": "Apply professional whitening gel and activate with special light"
+      },
+      {
+        "step": 4,
+        "title": "Post-Treatment Care",
+        "description": "Provide aftercare instructions and schedule follow-up if needed"
+      }
+    ],
+    "isActive": true
+  },
+  {
+    "name": "Dental Filling",
+    "thumbnail": "",
+    "description": "Treatment of cavities using composite filling material to restore tooth function and aesthetics.",
+    "category": "Treatment",
+    "price": 500000,
+    "process": [
+      {
+        "step": 1,
+        "title": "Cavity Assessment",
+        "description": "Examine the cavity and determine the best filling material and approach"
+      },
+      {
+        "step": 2,
+        "title": "Anesthesia Administration",
+        "description": "Apply local anesthesia to ensure a comfortable, pain-free procedure"
+      },
+      {
+        "step": 3,
+        "title": "Cavity Preparation",
+        "description": "Remove decayed tooth material and prepare the cavity for filling"
+      },
+      {
+        "step": 4,
+        "title": "Filling Placement",
+        "description": "Place and shape the filling material to restore tooth function and appearance"
+      },
+      {
+        "step": 5,
+        "title": "Final Polishing",
+        "description": "Polish the filling to match your natural tooth surface"
+      }
+    ],
+    "isActive": true
+  },
+  {
+    "name": "Root Canal Treatment",
+    "thumbnail": "",
+    "description": "Advanced treatment to save infected teeth by removing damaged pulp and sealing the root canal.",
+    "category": "Treatment",
+    "price": 1200000,
+    "process": [
+      {
+        "step": 1,
+        "title": "Diagnosis and Planning",
+        "description": "X-ray examination and assessment to determine the extent of infection"
+      },
+      {
+        "step": 2,
+        "title": "Anesthesia and Access",
+        "description": "Administer anesthesia and create access to the infected pulp chamber"
+      },
+      {
+        "step": 3,
+        "title": "Pulp Removal",
+        "description": "Remove infected or damaged pulp tissue from the root canals"
+      },
+      {
+        "step": 4,
+        "title": "Canal Cleaning",
+        "description": "Thoroughly clean and disinfect the root canal system"
+      },
+      {
+        "step": 5,
+        "title": "Canal Filling",
+        "description": "Fill and seal the root canals with biocompatible material"
+      },
+      {
+        "step": 6,
+        "title": "Tooth Restoration",
+        "description": "Place a crown or filling to restore the tooth's function and appearance"
+      }
+    ],
+    "isActive": true
+  }
+]
