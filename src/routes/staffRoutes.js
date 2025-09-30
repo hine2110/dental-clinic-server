@@ -186,4 +186,5 @@ router.get("/inventory/:medicineId",
   generalController.getMedicineDetail
 );
 
+
 module.exports = router;

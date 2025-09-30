@@ -31,6 +31,7 @@ require("./src/controllers/googleController");
 // Import routes
 const authRoutes = require("./src/routes/authRoutes");
 const staffRoutes = require("./src/routes/staffRoutes");
+const managementRoutes = require("./src/routes/managementRoutes");
 const adminRoutes = require("./src/routes/adminRoutes");
 const patientRoutes = require("./src/routes/patientRoutes");
 
@@ -62,6 +63,7 @@ app.get("/health", (req, res) => {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
+app.use("/api/management", managementRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/patient", patientRoutes);
 
