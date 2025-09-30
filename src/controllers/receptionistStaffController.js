@@ -6,6 +6,10 @@ const Location = require("../models/Location");
 const Appointment = require("../models/Appointment");
 const Notification = require("../models/Notification");
 const Staff = require("../models/Staff");
+const Service = require("../models/Service");
+const DispenseMedicine = require("../models/DispenseMedicine");
+const Prescription = require("../models/Prescription");
+const Invoice = require("../models/Invoice");
 const { 
   validateSchedule, 
   calculateWeeklyWorkingHours, 
@@ -15,169 +19,9 @@ const {
 
 // ==================== RECEPTIONIST FUNCTIONS ====================
 
-// 1. Quản lý lịch làm việc của doctor
-const manageDoctorSchedule = async (req, res) => {
-  try {
-
-    const { doctorId, locationId, date, startTime, endTime, isAvailable = true, notes } = req.body;
-
-    const staffId = req.staff._id;
-
-    // Kiểm tra doctor tồn tại
-    const doctor = await Doctor.findById(doctorId);
-    if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy bác sĩ"
-      });
-    }
 
 
-    // Kiểm tra location tồn tại
-    const location = await Location.findById(locationId);
-    if (!location) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy cơ sở"
-      });
-    }
 
-    // Validate lịch làm việc
-    const validation = await validateSchedule({
-      personId: doctorId,
-      date: new Date(date),
-      startTime,
-      endTime,
-      location
-    }, "doctor");
-
-    if (!validation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: "Dữ liệu lịch làm việc không hợp lệ",
-        errors: validation.errors
-      });
-    }
-
-    // Tạo lịch làm việc
-    const schedule = new DoctorSchedule({
-      doctor: doctorId,
-      location: locationId,
-      date: new Date(date),
-      startTime,
-      endTime,
-      isAvailable,
-      notes,
-      createdBy: staffId
-    });
-
-    await schedule.save();
-
-    // Populate thông tin để trả về
-    await schedule.populate([
-      { path: 'doctor', select: 'doctorId user' },
-      { path: 'location', select: 'name address' },
-      { path: 'createdBy', select: 'user' }
-    ]);
-
-    // Gửi thông báo cho doctor được xếp lịch
-    await sendDoctorScheduleNotification(schedule, staffId);
-
-    res.status(201).json({
-      success: true,
-      message: "Tạo lịch làm việc thành công",
-      data: schedule
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi tạo lịch làm việc",
-      error: error.message
-    });
-  }
-};
-
-// 2. Quản lý lịch làm việc của staff
-const manageStaffSchedule = async (req, res) => {
-  try {
-    const { staffId, locationId, date, startTime, endTime, isAvailable = true, notes } = req.body;
-    const createdByStaffId = req.staff._id;
-
-    // Kiểm tra staff tồn tại
-    const staff = await Staff.findById(staffId);
-    if (!staff) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy nhân viên"
-      });
-    }
-
-    // Kiểm tra location tồn tại
-    const location = await Location.findById(locationId);
-    if (!location) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy cơ sở"
-      });
-    }
-
-    // Validate lịch làm việc
-    const validation = await validateSchedule({
-      personId: staffId,
-      date: new Date(date),
-      startTime,
-      endTime,
-      location
-    }, "staff");
-
-    if (!validation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: "Dữ liệu lịch làm việc không hợp lệ",
-        errors: validation.errors
-      });
-    }
-
-    // Tạo lịch làm việc
-    const schedule = new StaffSchedule({
-      staff: staffId,
-      location: locationId,
-      date: new Date(date),
-      startTime,
-      endTime,
-      isAvailable,
-      notes,
-      createdBy: createdByStaffId
-
-    });
-
-    await schedule.save();
-
-
-    // Populate thông tin để trả về
-    await schedule.populate([
-      { path: 'staff', select: 'staffType user' },
-      { path: 'location', select: 'name address' },
-      { path: 'createdBy', select: 'user' }
-    ]);
-
-    // Gửi thông báo cho staff được xếp lịch
-    await sendStaffScheduleNotification(schedule, createdByStaffId);
-
-
-    res.status(201).json({
-      success: true,
-      message: "Tạo lịch làm việc thành công",
-      data: schedule
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi tạo lịch làm việc",
-      error: error.message
-    });
-  }
-};
 
 
 // 3. Xem lịch làm việc của doctor
@@ -224,45 +68,7 @@ const getDoctorSchedules = async (req, res) => {
   }
 };
 
-// 4. Xem lịch làm việc của staff
-const getStaffSchedules = async (req, res) => {
-  try {
-    const { staffId, locationId, date, status, startDate, endDate } = req.query;
-    
-    let query = {};
-    if (staffId) query.staff = staffId;
-    if (locationId) query.location = locationId;
-    
-    if (date) {
-      const startDate = new Date(date);
-      const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      query.date = { $gte: startDate, $lt: endDate };
-    } else if (startDate && endDate) {
-      query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
-    }
-    
-    if (status !== undefined) query.isAvailable = status === 'available';
 
-    const schedules = await StaffSchedule.find(query)
-      .populate('staff', 'staffType user')
-      .populate('location', 'name address')
-      .populate('createdBy', 'user')
-      .sort({ date: 1, startTime: 1 });
-
-    res.status(200).json({
-      success: true,
-      message: "Lấy lịch làm việc thành công",
-      data: schedules
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy lịch làm việc",
-      error: error.message
-    });
-  }
-};
 
 // 3. Chấp nhận đặt lịch của bệnh nhân
 const acceptPatientBooking = async (req, res) => {
@@ -291,6 +97,14 @@ const acceptPatientBooking = async (req, res) => {
 
     console.log("Found appointment:", appointment);
 
+    // Bắt buộc đã thu tiền cọc thì mới chấp nhận lịch
+    if (appointment.paymentStatus !== 'paid') {
+      return res.status(400).json({
+        success: false,
+        message: "Cần thu tiền cọc trước khi xác nhận lịch hẹn"
+      });
+    }
+
     // Cập nhật status và staff xử lý
     appointment.status = status;
     appointment.staff = staffId;
@@ -299,9 +113,8 @@ const acceptPatientBooking = async (req, res) => {
 
     console.log("Appointment updated successfully");
 
-    // Gửi thông báo cho bệnh nhân và doctor
-
-    await sendBookingNotification(appointment, staffId);
+    // Gửi thông báo cho doctor sau khi lịch được chấp nhận
+    await sendDoctorBookingNotification(appointment, staffId);
 
     res.status(200).json({
       success: true,
@@ -457,6 +270,91 @@ const sendDoctorScheduleNotification = async (schedule, staffId) => {
   }
 };
 
+// 9. Gửi hóa đơn cho bệnh nhân dựa trên prescription
+// Body: { prescriptionId, patientTakesMedicines: boolean }
+const sendInvoice = async (req, res) => {
+  try {
+    const staffId = req.staff._id;
+    const { prescriptionId, patientTakesMedicines = true, paymentMethod = "cash" } = req.body;
+
+    if (!prescriptionId) {
+      return res.status(400).json({ success: false, message: "Thiếu prescriptionId" });
+    }
+
+    // Lấy đơn thuốc cùng bệnh nhân, dịch vụ đã kê
+    const prescription = await Prescription.findById(prescriptionId)
+      .populate("patient", "user contactInfo")
+      .populate("services", "price name");
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy đơn thuốc" });
+    }
+
+    // Tính tổng tiền dịch vụ
+    const totalServices = Array.isArray(prescription.services)
+      ? prescription.services.reduce((sum, s) => sum + (s?.price || 0), 0)
+      : 0;
+
+    // Tính tổng tiền thuốc đã xuất theo prescription
+    let totalMedicines = 0;
+    if (patientTakesMedicines) {
+      const dispenses = await DispenseMedicine.find({ prescription: prescription._id, status: { $in: ["dispensed"] } });
+      totalMedicines = dispenses.reduce((sum, d) => sum + (d.totalPrice || (d.quantity * d.unitPrice)), 0);
+    }
+
+    const totalPrice = patientTakesMedicines ? (totalServices + totalMedicines) : totalServices;
+
+    // Tạo hóa đơn
+    const invoiceCount = await Invoice.countDocuments();
+    const invoiceId = `INV${String(invoiceCount + 1).padStart(6, '0')}`;
+    const invoice = new Invoice({
+      invoiceId,
+      appointment: prescription.appointment,
+      staff: staffId,
+      patient: prescription.patient,
+      total: totalPrice,
+      paymentStatus: "pending",
+      paymentMethod
+    });
+    await invoice.save();
+
+    // Gửi thông báo hóa đơn cho bệnh nhân qua hệ thống Notification
+    try {
+      // Đảm bảo có patient.user để gửi thông báo tới tài khoản người dùng của bệnh nhân
+      if (!prescription.patient?.user) {
+        await prescription.populate({ path: 'patient', select: 'user' });
+      }
+      const patientUserId = prescription.patient?.user || prescription.patient;
+      const invoiceNotification = new Notification({
+        sender: staffId,
+        recipients: [patientUserId],
+        recipientModel: "User",
+        title: "Hóa đơn dịch vụ",
+        message: `Tổng dịch vụ: ${totalServices.toLocaleString('vi-VN')} VND, Tổng thuốc: ${totalMedicines.toLocaleString('vi-VN')} VND, Tổng cộng: ${totalPrice.toLocaleString('vi-VN')} VND`,
+        type: "invoice_created",
+        relatedData: {
+          invoiceId: invoice._id,
+          invoiceCode: invoiceId,
+          prescriptionId: prescription._id,
+          totalServices,
+          totalMedicines,
+          totalPrice
+        }
+      });
+      await invoiceNotification.save();
+    } catch (e) {
+      // Không làm fail API nếu gửi thông báo lỗi
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Gửi hóa đơn thành công",
+      data: { invoice, totalServices, totalMedicines, totalPrice }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi khi gửi hóa đơn", error: error.message });
+  }
+};
+
 // 2. Gửi thông báo cho staff khi có StaffSchedule mới
 const sendStaffScheduleNotification = async (schedule, staffId) => {
   try {
@@ -514,7 +412,7 @@ const sendStaffScheduleNotification = async (schedule, staffId) => {
 };
 
 // 3. Gửi thông báo cho doctor khi có patient book lịch được accept
-const sendBookingNotification = async (appointment, staffId) => {
+const sendDoctorBookingNotification = async (appointment, staffId) => {
   try {
     // Populate appointment nếu chưa có
     if (!appointment.patient || !appointment.doctor) {
@@ -523,22 +421,6 @@ const sendBookingNotification = async (appointment, staffId) => {
         { path: 'doctor', select: 'doctorId user' }
       ]);
     }
-
-    // Thông báo cho bệnh nhân
-    const patientNotification = new Notification({
-      sender: staffId,
-      recipients: [appointment.patient._id || appointment.patient],
-      recipientModel: "User",
-      title: "Cập nhật lịch hẹn",
-      message: `Lịch hẹn của bạn đã được ${appointment.status}`,
-      type: "appointment_updated",
-      relatedData: {
-        appointmentId: appointment._id,
-        patientId: appointment.patient._id || appointment.patient
-      }
-    });
-
-    console.log("Patient notification created:", patientNotification);
 
     // Thông báo cho doctor được book lịch
     const doctorId = appointment.doctor._id || appointment.doctor;
@@ -564,12 +446,7 @@ const sendBookingNotification = async (appointment, staffId) => {
 
     console.log("Doctor notification created:", doctorNotification);
 
-    const savedNotifications = await Promise.all([
-      patientNotification.save(),
-      doctorNotification.save()
-    ]);
-
-    console.log("Notifications saved successfully:", savedNotifications);
+    await doctorNotification.save();
 
   } catch (error) {
     console.error("Lỗi gửi thông báo đặt lịch:", error);
@@ -578,391 +455,289 @@ const sendBookingNotification = async (appointment, staffId) => {
   }
 };
 
-// 5. Quản lý cơ sở (Location)
-const getLocations = async (req, res) => {
+// 4. Gửi thông báo cho bệnh nhân sau khi thu tiền cọc thành công
+const sendPatientBookingNotification = async (appointment, staffId) => {
   try {
-    const { isActive } = req.query;
-    
-    let query = {};
-    if (isActive !== undefined) query.isActive = isActive === 'true';
-
-    const locations = await Location.find(query).sort({ name: 1 });
-
-    res.status(200).json({
-      success: true,
-      message: "Lấy danh sách cơ sở thành công",
-      data: locations
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy danh sách cơ sở",
-      error: error.message
-    });
-  }
-};
-
-const createLocation = async (req, res) => {
-  try {
-    const locationData = req.body;
-    const staffId = req.staff._id;
-
-    // Tạo locationId tự động nếu không có
-    if (!locationData.locationId) {
-      const count = await Location.countDocuments();
-      locationData.locationId = `LOC${String(count + 1).padStart(3, '0')}`;
+    if (!appointment.patient) {
+      await appointment.populate({ path: 'patient', select: 'user' });
     }
 
-    const location = new Location(locationData);
-    await location.save();
+    const patientNotification = new Notification({
+      sender: staffId,
+      recipients: [appointment.patient._id || appointment.patient],
+      recipientModel: "User",
+      title: "Xác nhận đặt lịch",
+      message: `Đã nhận tiền cọc. Lịch hẹn của bạn vào ngày ${appointment.appointmentDate.toLocaleDateString('vi-VN')} lúc ${appointment.startTime} đã được xác nhận.`,
+      type: "appointment_updated",
+      relatedData: {
+        appointmentId: appointment._id,
+        patientId: appointment.patient._id || appointment.patient
+      }
+    });
 
-    res.status(201).json({
-      success: true,
-      message: "Tạo cơ sở thành công",
-      data: location
-    });
+    await patientNotification.save();
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi tạo cơ sở",
-      error: error.message
-    });
+    console.error("Lỗi gửi thông báo cho bệnh nhân:", error);
   }
 };
 
-const updateLocation = async (req, res) => {
+// 5. Thu tiền cọc cho lịch hẹn (bắt buộc)
+const processDeposit = async (req, res) => {
   try {
-    const { locationId } = req.params;
-    const updateData = req.body;
+    const { appointmentId } = req.params;
+    const amountRaw = req.body.amount;
+    const amount = Number(amountRaw);
+    const staffId = req.staff._id;
 
-    const location = await Location.findByIdAndUpdate(
-      locationId,
-      updateData,
-      { new: true, runValidators: true }
-    );
-
-    if (!location) {
-      return res.status(404).json({
+    const MIN_DEPOSIT = 35000;
+    if (!Number.isFinite(amount) || amount < MIN_DEPOSIT) {
+      return res.status(400).json({
         success: false,
-        message: "Không tìm thấy cơ sở"
+        message: `Số tiền cọc tối thiểu là ${MIN_DEPOSIT} VND`
       });
     }
 
+    const appointment = await Appointment.findById(appointmentId).populate('patient', 'user');
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy lịch hẹn"
+      });
+    }
+
+    // Cập nhật trạng thái thanh toán
+    appointment.paymentStatus = 'paid';
+    appointment.totalAmount = Math.max(appointment.totalAmount || 0, amount);
+    await appointment.save();
+
+    // Gửi thông báo cho bệnh nhân
+    await sendPatientBookingNotification(appointment, staffId);
+
     res.status(200).json({
       success: true,
-      message: "Cập nhật cơ sở thành công",
-      data: location
+      message: "Thu tiền cọc thành công",
+      data: appointment
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Lỗi khi cập nhật cơ sở",
+      message: "Lỗi khi thu tiền cọc",
       error: error.message
     });
   }
 };
 
-// 6. Xem thống kê lịch làm việc của Doctor
-const getScheduleStatsDoctor = async (req, res) => {
+// 6. Xem lịch làm việc theo staff._id (receptionist tự xem lịch của mình)
+const viewReceptionistSchedule = async (req, res) => {
   try {
-    const { startDate, endDate, locationId, doctorId } = req.query;
-    
-    let start, end;
-    
-    if (startDate && endDate) {
-      start = new Date(startDate);
-      end = new Date(endDate);
-    } else {
-      // Mặc định xem 1 tuần từ hôm nay
-      start = new Date();
-      start.setHours(0, 0, 0, 0); // Bắt đầu từ 00:00:00
-      end = new Date(start);
-      end.setDate(end.getDate() + 6); // Kết thúc sau 6 ngày (tổng 7 ngày)
-      end.setHours(23, 59, 59, 999); // Kết thúc lúc 23:59:59
+    const { date, status, startDate, endDate, locationId } = req.query;
+    const staffId = req.staff._id;
+
+    let query = { staff: staffId };
+    if (locationId) query.location = locationId;
+
+    if (date) {
+      const s = new Date(date);
+      const e = new Date(date);
+      e.setDate(e.getDate() + 1);
+      query.date = { $gte: s, $lt: e };
+    } else if (startDate && endDate) {
+      query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
     }
 
-    let doctorQuery = { date: { $gte: start, $lte: end } };
-    
-    if (locationId) {
-      doctorQuery.location = locationId;
-    }
-    
-    if (doctorId) {
-      doctorQuery.doctor = doctorId;
-    }
+    if (status !== undefined) query.isAvailable = status === 'available';
 
-    console.log('Doctor Query:', doctorQuery); // Debug log
-    console.log('Start Date:', start);
-    console.log('End Date:', end);
-
-    const doctorSchedules = await DoctorSchedule.find(doctorQuery)
-      .populate('doctor', 'doctorId user')
-      .populate('location', 'name address')
-      .sort({ date: 1, startTime: 1 });
-
-    console.log('Found schedules:', doctorSchedules.length); // Debug log
-
-    // Tính tổng giờ làm việc
-    const doctorHours = doctorSchedules.reduce((total, schedule) => {
-      const startTime = schedule.startTime.split(':').map(Number);
-      const endTime = schedule.endTime.split(':').map(Number);
-      const hours = (endTime[0] * 60 + endTime[1] - startTime[0] * 60 - startTime[1]) / 60;
-      return total + hours;
-    }, 0);
-
-    res.status(200).json({
-      success: true,
-      message: "Lấy thống kê lịch làm việc doctor thành công",
-      data: {
-        period: { startDate: start, endDate: end },
-        doctorSchedules: {
-          count: doctorSchedules.length,
-          totalHours: doctorHours,
-          schedules: doctorSchedules
-        }
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy thống kê lịch làm việc doctor",
-      error: error.message
-    });
-  }
-};
-
-// 7. Xem thống kê lịch làm việc của Staff
-const getScheduleStatsStaff = async (req, res) => {
-  try {
-    const { startDate, endDate, locationId, staffId } = req.query;
-    
-    let start, end;
-    
-    if (startDate && endDate) {
-      start = new Date(startDate);
-      end = new Date(endDate);
-    } else {
-      // Mặc định xem 1 tuần từ hôm nay
-      start = new Date();
-      start.setHours(0, 0, 0, 0); // Bắt đầu từ 00:00:00
-      end = new Date(start);
-      end.setDate(end.getDate() + 6); // Kết thúc sau 6 ngày (tổng 7 ngày)
-      end.setHours(23, 59, 59, 999); // Kết thúc lúc 23:59:59
-    }
-
-    let staffQuery = { date: { $gte: start, $lte: end } };
-    
-    if (locationId) {
-      staffQuery.location = locationId;
-    }
-    
-    if (staffId) {
-      staffQuery.staff = staffId;
-    }
-
-    console.log('Staff Query:', staffQuery); // Debug log
-    console.log('Start Date:', start);
-    console.log('End Date:', end);
-
-    const staffSchedules = await StaffSchedule.find(staffQuery)
+    const schedules = await StaffSchedule.find(query)
       .populate('staff', 'staffType user')
       .populate('location', 'name address')
       .sort({ date: 1, startTime: 1 });
 
-    console.log('Found schedules:', staffSchedules.length); // Debug log
-
-    // Tính tổng giờ làm việc
-    const staffHours = staffSchedules.reduce((total, schedule) => {
-      const startTime = schedule.startTime.split(':').map(Number);
-      const endTime = schedule.endTime.split(':').map(Number);
-      const hours = (endTime[0] * 60 + endTime[1] - startTime[0] * 60 - startTime[1]) / 60;
-      return total + hours;
-    }, 0);
-
     res.status(200).json({
       success: true,
-      message: "Lấy thống kê lịch làm việc staff thành công",
-      data: {
-        period: { startDate: start, endDate: end },
-        staffSchedules: {
-          count: staffSchedules.length,
-          totalHours: staffHours,
-          schedules: staffSchedules
-        }
-      }
+      message: "Lấy lịch làm việc của receptionist thành công",
+      data: schedules
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Lỗi khi lấy thống kê lịch làm việc staff",
+      message: "Lỗi khi lấy lịch làm việc của receptionist",
       error: error.message
     });
   }
 };
 
-// 7. Xem thống kê giờ làm việc của doctor
-const getDoctorWorkingHours = async (req, res) => {
+// 7. Xem thông tin của bệnh nhân
+const Patient = require("../models/Patient");
+const viewPatientInfo = async (req, res) => {
   try {
-    const { doctorId, startDate, endDate, period = "week" } = req.query;
-    
-    if (!doctorId) {
+    const { patientId } = req.params;
+    if (!patientId) {
       return res.status(400).json({
         success: false,
-        message: "doctorId là bắt buộc"
+        message: "Thiếu patientId"
       });
     }
 
-    let start, end;
-    if (startDate && endDate) {
-      start = new Date(startDate);
-      end = new Date(endDate);
-    } else if (period === "month") {
-      const now = new Date();
-      start = new Date(now.getFullYear(), now.getMonth(), 1);
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-    } else {
-      // Mặc định là tuần hiện tại
-      const now = new Date();
-      start = new Date(now);
-      start.setDate(now.getDate() - now.getDay()); // Chủ nhật
-      end = new Date(start);
-      end.setDate(start.getDate() + 6); // Thứ bảy
-    }
-
-    const stats = await getWorkingHoursStats(doctorId, start, end, "doctor");
-
-    res.status(200).json({
-      success: true,
-      message: "Lấy thống kê giờ làm việc thành công",
-      data: {
-        doctorId,
-        period: { startDate: start, endDate: end },
-        ...stats
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy thống kê giờ làm việc",
-      error: error.message
-    });
-  }
-};
-
-// 8. Xem thống kê giờ làm việc của staff
-const getStaffWorkingHours = async (req, res) => {
-  try {
-    const { staffId, startDate, endDate, period = "week" } = req.query;
-    
-    if (!staffId) {
-      return res.status(400).json({
+    const patient = await Patient.findById(patientId);
+    if (!patient) {
+      return res.status(404).json({
         success: false,
-        message: "staffId là bắt buộc"
+        message: "Không tìm thấy bệnh nhân"
       });
     }
 
-    let start, end;
-    if (startDate && endDate) {
-      start = new Date(startDate);
-      end = new Date(endDate);
-    } else if (period === "month") {
-      const now = new Date();
-      start = new Date(now.getFullYear(), now.getMonth(), 1);
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-    } else {
-      // Mặc định là tuần hiện tại
-      const now = new Date();
-      start = new Date(now);
-      start.setDate(now.getDate() - now.getDay()); // Chủ nhật
-      end = new Date(start);
-      end.setDate(start.getDate() + 6); // Thứ bảy
-    }
-
-    const stats = await getWorkingHoursStats(staffId, start, end, "staff");
-
     res.status(200).json({
       success: true,
-      message: "Lấy thống kê giờ làm việc thành công",
-      data: {
-        staffId,
-        period: { startDate: start, endDate: end },
-        ...stats
-      }
+      message: "Lấy thông tin bệnh nhân thành công",
+      data: patient
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Lỗi khi lấy thống kê giờ làm việc",
+      message: "Lỗi khi lấy thông tin bệnh nhân",
       error: error.message
     });
   }
 };
 
-// 9. Kiểm tra giờ làm việc còn lại trong tuần
-const checkRemainingWorkingHours = async (req, res) => {
+// 8. Chỉnh sửa thông tin cá nhân của receptionist
+const editOwnProfile = async (req, res) => {
   try {
-    const { doctorId, staffId, date } = req.query;
-    
-    // Kiểm tra có ít nhất 1 ID và date
-    if ((!doctorId && !staffId) || !date) {
+    const staffId = req.staff._id;
+    const { profile } = req.body;
+
+    if (!profile || typeof profile !== 'object') {
       return res.status(400).json({
         success: false,
-        message: "Cần có doctorId hoặc staffId và date"
+        message: "Dữ liệu profile không hợp lệ"
       });
     }
 
-    // Xác định personId và personType
-    let personId, personType;
-    if (doctorId) {
-      personId = doctorId;
-      personType = "doctor";
-    } else {
-      personId = staffId;
-      personType = "staff";
-    }
+    const updated = await Staff.findByIdAndUpdate(
+      staffId,
+      { $set: { profile } },
+      { new: true, runValidators: true }
+    ).populate('user');
 
-    const checkDate = new Date(date);
-    const weeklyHours = await calculateWeeklyWorkingHours(personId, checkDate, personType);
-    const remainingHours = 52 - weeklyHours;
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy nhân viên"
+      });
+    }
 
     res.status(200).json({
       success: true,
-      message: "Kiểm tra giờ làm việc còn lại thành công",
-      data: {
-        personId,
-        personType,
-        currentWeekHours: weeklyHours,
-        remainingHours: Math.max(0, remainingHours),
-        maxWeeklyHours: 52
-      }
+      message: "Cập nhật hồ sơ cá nhân thành công",
+      data: updated
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Lỗi khi kiểm tra giờ làm việc còn lại",
+      message: "Lỗi khi cập nhật hồ sơ cá nhân",
       error: error.message
     });
-
   }
 };
+
+// 5. Quản lý cơ sở (Location)
+// const getLocations = async (req, res) => {
+//   try {
+//     const { isActive } = req.query;
+    
+//     let query = {};
+//     if (isActive !== undefined) query.isActive = isActive === 'true';
+
+//     const locations = await Location.find(query).sort({ name: 1 });
+
+//     res.status(200).json({
+//       success: true,
+//       message: "Lấy danh sách cơ sở thành công",
+//       data: locations
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: "Lỗi khi lấy danh sách cơ sở",
+//       error: error.message
+//     });
+//   }
+// };
+
+// const createLocation = async (req, res) => {
+//   try {
+//     const locationData = req.body;
+//     const staffId = req.staff._id;
+
+//     // Tạo locationId tự động nếu không có
+//     if (!locationData.locationId) {
+//       const count = await Location.countDocuments();
+//       locationData.locationId = `LOC${String(count + 1).padStart(3, '0')}`;
+//     }
+
+//     const location = new Location(locationData);
+//     await location.save();
+
+//     res.status(201).json({
+//       success: true,
+//       message: "Tạo cơ sở thành công",
+//       data: location
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: "Lỗi khi tạo cơ sở",
+//       error: error.message
+//     });
+//   }
+// };
+
+// const updateLocation = async (req, res) => {
+//   try {
+//     const { locationId } = req.params;
+//     const updateData = req.body;
+
+//     const location = await Location.findByIdAndUpdate(
+//       locationId,
+//       updateData,
+//       { new: true, runValidators: true }
+//     );
+
+//     if (!location) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Không tìm thấy cơ sở"
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       message: "Cập nhật cơ sở thành công",
+//       data: location
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: "Lỗi khi cập nhật cơ sở",
+//       error: error.message
+//     });
+//   }
+// };
+
+
 
 module.exports = {
-  manageDoctorSchedule,
-  manageStaffSchedule,
   getDoctorSchedules,
-  getStaffSchedules,
-  getLocations,
-  createLocation,
-  updateLocation,
-  getScheduleStatsDoctor,
-  getScheduleStatsStaff,
-  getDoctorWorkingHours,
-  getStaffWorkingHours,
-  checkRemainingWorkingHours,
+  viewReceptionistSchedule,
+  viewPatientInfo,
   acceptPatientBooking,
   getPendingAppointments,
   getAppointments,
   sendDoctorScheduleNotification,
   sendStaffScheduleNotification,
-  sendBookingNotification
+  sendDoctorBookingNotification,
+  sendPatientBookingNotification,
+  processDeposit,
+  editOwnProfile,
+  sendInvoice
 };
