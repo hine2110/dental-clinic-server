@@ -5,6 +5,7 @@ const StaffSchedule = require("../models/StaffSchedule");
 const Location = require("../models/Location");
 const EquipmentIssue = require("../models/EquipmentIssue");
 const Invoice = require("../models/Invoice");
+const Notification = require("../models/Notification");
 
 const parseTimeToMinutes = (time) => {
   const [h, m] = time.split(":").map(Number);
@@ -364,6 +365,28 @@ const createDoctorSchedule = async (req, res) => {
             }
           });
 
+        // Notify assigned doctor
+        try {
+          await Notification.create({
+            sender: req.management?._id,
+            recipients: [doctorId],
+            recipientModel: "Doctor",
+            title: "Lịch làm việc mới",
+            message: `Bạn được xếp lịch ngày ${new Date(date).toLocaleDateString("vi-VN")} từ ${startTime} đến ${endTime} tại cơ sở ${location.name}`,
+            type: "doctor_schedule_assigned",
+            relatedData: {
+              scheduleId: populated._id,
+              scheduleType: "doctor",
+              location: locationId,
+              assignedPerson: doctorId,
+              doctorId: doctorId
+            }
+          });
+        } catch (notifyErr) {
+          // Non-blocking
+          console.error("Notify doctor create schedule error:", notifyErr);
+        }
+
         results.push(populated);
       } catch (error) {
         errors.push(`Lịch ${i + 1}: ${error.message}`);
@@ -463,9 +486,30 @@ const updateDoctorSchedule = async (req, res) => {
             }
           });
 
+    // Notify doctor about update
+    try {
+      await Notification.create({
+        sender: req.management?._id,
+        recipients: [schedule.doctor],
+        recipientModel: "Doctor",
+        title: "Cập nhật lịch làm việc",
+        message: `Lịch ngày ${new Date(newDate).toLocaleDateString("vi-VN")} đã được cập nhật: ${newStart} - ${newEnd}`,
+        type: "schedule_update",
+        relatedData: {
+          scheduleId: populated._id,
+          scheduleType: "doctor",
+          location: schedule.location,
+          assignedPerson: schedule.doctor,
+          doctorId: schedule.doctor
+        }
+      });
+    } catch (notifyErr) {
+      console.error("Notify doctor update schedule error:", notifyErr);
+    }
+
     res.status(200).json({ success: true, message: "Cập nhật lịch bác sĩ thành công", data: populated });
   } catch (error) {
-    res.status(500).njson({ success: false, message: "Lỗi cập nhật lịch bác sĩ", error: error.message });
+    res.status(500).json({ success: false, message: "Lỗi cập nhật lịch bác sĩ", error: error.message });
   }
 };
 
@@ -482,6 +526,26 @@ const deleteDoctorSchedule = async (req, res) => {
     const weekly = await validateDoctorWeeklyComposition(locationId, date);
     if (!weekly.isValid) {
       return res.status(400).njson({ success: false, message: "Xóa lịch làm vi phạm ràng buộc bác sĩ trong tuần", errors: weekly.errors });
+    }
+
+    // Notify doctor about deletion
+    try {
+      await Notification.create({
+        sender: req.management?._id,
+        recipients: [schedule.doctor],
+        recipientModel: "Doctor",
+        title: "Hủy lịch làm việc",
+        message: `Lịch ngày ${new Date(date).toLocaleDateString("vi-VN")} (${schedule.startTime} - ${schedule.endTime}) đã bị hủy`,
+        type: "schedule_update",
+        relatedData: {
+          scheduleType: "doctor",
+          location: locationId,
+          assignedPerson: schedule.doctor,
+          doctorId: schedule.doctor
+        }
+      });
+    } catch (notifyErr) {
+      console.error("Notify doctor delete schedule error:", notifyErr);
     }
 
     res.status(200).json({ success: true, message: "Xóa lịch bác sĩ thành công" });
@@ -527,7 +591,7 @@ const createStaffSchedule = async (req, res) => {
         }
 
         const schedule = new StaffSchedule({
-          staff: staffId,
+          staff: staff._id,
           location: locationId,
           date: new Date(date),
           startTime,
@@ -560,6 +624,26 @@ const createStaffSchedule = async (req, res) => {
           .populate("staff", "staffType user")
           .populate("location", "name address");
 
+        // Notify assigned staff
+        try {
+          await Notification.create({
+            sender: req.management?._id,
+            recipients: [staff._id],
+            recipientModel: "Staff",
+            title: "Lịch làm việc mới",
+            message: `Bạn được xếp lịch ngày ${new Date(date).toLocaleDateString("vi-VN")} từ ${startTime} đến ${endTime} tại cơ sở ${location.name}`,
+            type: "staff_schedule_assigned",
+            relatedData: {
+              staffScheduleId: populated._id,
+              scheduleType: "staff",
+              location: locationId,
+              assignedPerson: staff._id
+            }
+          });
+        } catch (notifyErr) {
+          console.error("Notify staff create schedule error:", notifyErr);
+        }
+
         results.push(populated);
       } catch (innerError) {
         errors.push(`Lịch ${i + 1}: ${innerError.message}`);
@@ -582,7 +666,7 @@ const createStaffSchedule = async (req, res) => {
 
     return res.status(201).json({ success: true, message, data: results.length === 1 ? results[0] : results, count: results.length });
   } catch (error) {
-    return res.status(500).njson({ success: false, message: "Lỗi tạo lịch staff", error: error.message });
+    return res.status(500).json({ success: false, message: "Lỗi tạo lịch staff", error: error.message });
   }
 };
 
@@ -616,6 +700,26 @@ const updateStaffSchedule = async (req, res) => {
       .populate("staff", "staffType user")
       .populate("location", "name address");
 
+    // Notify staff about update
+    try {
+      await Notification.create({
+        sender: req.management?._id,
+        recipients: [schedule.staff],
+        recipientModel: "Staff",
+        title: "Cập nhật lịch làm việc",
+        message: `Lịch ngày ${new Date(newDate).toLocaleDateString("vi-VN")} đã được cập nhật: ${newStart} - ${newEnd}`,
+        type: "schedule_update",
+        relatedData: {
+          staffScheduleId: populated._id,
+          scheduleType: "staff",
+          location: schedule.location,
+          assignedPerson: schedule.staff
+        }
+      });
+    } catch (notifyErr) {
+      console.error("Notify staff update schedule error:", notifyErr);
+    }
+
     res.status(200).json({ success: true, message: "Cập nhật lịch staff thành công", data: populated });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi cập nhật lịch staff", error: error.message });
@@ -630,11 +734,33 @@ const deleteStaffSchedule = async (req, res) => {
 
     const locationId = schedule.location;
     const date = schedule.date;
+    const staffId = schedule.staff;
+    const start = schedule.startTime;
+    const end = schedule.endTime;
     await schedule.deleteOne();
 
     const weekly = await validateStaffWeeklyComposition(locationId, date);
     if (!weekly.isValid) {
       return res.status(400).json({ success: false, message: "Xóa lịch làm vi phạm ràng buộc staff trong tuần", errors: weekly.errors });
+    }
+
+    // Notify staff about deletion
+    try {
+      await Notification.create({
+        sender: req.management?._id,
+        recipients: [staffId],
+        recipientModel: "Staff",
+        title: "Hủy lịch làm việc",
+        message: `Lịch ngày ${new Date(date).toLocaleDateString("vi-VN")} (${start} - ${end}) đã bị hủy`,
+        type: "schedule_update",
+        relatedData: {
+          scheduleType: "staff",
+          location: locationId,
+          assignedPerson: staffId
+        }
+      });
+    } catch (notifyErr) {
+      console.error("Notify staff delete schedule error:", notifyErr);
     }
 
     res.status(200).json({ success: true, message: "Xóa lịch staff thành công" });
@@ -651,7 +777,7 @@ const getDoctorProfile = async (req, res) => {
     if (!doctor) return res.status(404).json({ success: false, message: "Không tìm thấy bác sĩ" });
     res.status(200).json({ success: true, data: doctor });
   } catch (error) {
-    res.status(500).njson({ success: false, message: "Lỗi lấy hồ sơ bác sĩ", error: error.message });
+    res.status(500).json({ success: false, message: "Lỗi lấy hồ sơ bác sĩ", error: error.message });
   }
 };
 

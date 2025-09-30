@@ -1,8 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const receptionistController = require("../controllers/receptionistStaffController");
-const cashierController = require("../controllers/cashierStaffController");
-const generalController = require("../controllers/generalStaffController");
+const storeKepperController = require("../controllers/storeKepperController");
 const { authenticate } = require("../middlewares/auth");
 const { checkStaffRole, checkPermission } = require("../middlewares/staff");
 
@@ -13,177 +12,127 @@ router.use(checkStaffRole);
 
 // ==================== RECEPTIONIST ROUTES ====================
 
-// Quản lý lịch làm việc của doctor
-router.post("/schedules/doctors", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.manageDoctorSchedule
-);
-
-router.get("/schedules/doctors", 
-  checkPermission("manageDoctorSchedule"),
+// Xem lịch bác sĩ
+router.get("/receptionist/schedules/doctors",
+  checkPermission("viewReceptionistSchedule"),
   receptionistController.getDoctorSchedules
 );
 
-// Quản lý lịch làm việc của staff
-router.post("/schedules/staff", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.manageStaffSchedule
+// Xem lịch làm việc của chính receptionist
+router.get("/receptionist/schedules/self",
+  checkPermission("viewReceptionistSchedule"),
+  receptionistController.viewReceptionistSchedule
 );
 
-router.get("/schedules/staff", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.getStaffSchedules
+// Xem thông tin bệnh nhân
+router.get("/receptionist/patients/:patientId",
+  checkPermission("viewPatientInfo"),
+  receptionistController.viewPatientInfo
 );
 
-// Thống kê lịch làm việc của Doctor
-router.get("/schedules/stats/doctors", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.getScheduleStatsDoctor
+// Thu tiền cọc
+router.post("/receptionist/appointments/:appointmentId/deposit",
+  checkPermission("processDeposit"),
+  receptionistController.processDeposit
 );
 
-// Thống kê lịch làm việc của Staff
-router.get("/schedules/stats/staff", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.getScheduleStatsStaff
-);
-
-// Thống kê giờ làm việc của doctor
-router.get("/schedules/doctors/working-hours", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.getDoctorWorkingHours
-);
-
-// Thống kê giờ làm việc của staff
-router.get("/schedules/staff/working-hours", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.getStaffWorkingHours
-);
-
-// Kiểm tra giờ làm việc còn lại
-router.get("/schedules/remaining-hours", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.checkRemainingWorkingHours
-);
-
-// Quản lý cơ sở (Location)
-router.get("/locations", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.getLocations
-);
-
-router.post("/locations", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.createLocation
-);
-
-router.put("/locations/:locationId", 
-  checkPermission("manageDoctorSchedule"),
-  receptionistController.updateLocation
+// Gửi hóa đơn theo prescription
+router.post("/receptionist/invoices/send",
+  checkPermission("sendInvoice"),
+  receptionistController.sendInvoice
 );
 
 // Chấp nhận đặt lịch của bệnh nhân
-router.put("/appointments/:appointmentId/accept", 
+router.put("/receptionist/appointments/:appointmentId/accept",
   checkPermission("acceptPatientBooking"),
   receptionistController.acceptPatientBooking
 );
 
 // Xem danh sách lịch hẹn chờ duyệt
-router.get("/appointments/pending", 
+router.get("/receptionist/appointments/pending",
   checkPermission("acceptPatientBooking"),
   receptionistController.getPendingAppointments
 );
 
 // Xem danh sách lịch hẹn (tất cả)
-router.get("/appointments", 
+router.get("/receptionist/appointments",
   checkPermission("acceptPatientBooking"),
   receptionistController.getAppointments
 );
 
-// ==================== CASHIER ROUTES ====================
-
-// Quản lý đơn thuốc
-router.get("/prescriptions", 
-  checkPermission("handlePrescriptions"),
-  cashierController.getPrescriptions
+// Chỉnh sửa hồ sơ cá nhân (receptionist)
+router.put("/receptionist/profile",
+  checkPermission("editOwnProfile"),
+  receptionistController.editOwnProfile
 );
 
-router.get("/prescriptions/:prescriptionId", 
-  checkPermission("handlePrescriptions"),
-  cashierController.getPrescriptionDetail
+
+// ==================== STORE KEEPER ROUTES ====================
+
+// Xem lịch làm việc của store keeper (self)
+router.get("/store/schedules/self",
+  checkPermission("viewStoreKepperSchedule"),
+  storeKepperController.viewStoreKepperSchedule
 );
 
-// Bóc thuốc từ kho
-router.post("/medicines/dispense", 
+// Xem đơn thuốc
+router.get("/store/prescriptions",
+  checkPermission("viewPrescriptions"),
+  storeKepperController.viewPrescriptions
+);
+
+// Xuất thuốc theo đơn
+router.post("/store/medicines/dispense",
   checkPermission("dispenseMedicines"),
-  cashierController.dispenseMedicine
+  storeKepperController.dispenseMedicines
 );
 
-router.get("/medicines", 
-  checkPermission("dispenseMedicines"),
-  cashierController.getAvailableMedicines
+// INVENTORY - Thuốc
+router.get("/store/inventory",
+  checkPermission("viewInventory"),
+  storeKepperController.viewInventory
+);
+router.post("/store/inventory",
+  checkPermission("createMedicine"),
+  storeKepperController.createMedicine
+);
+router.put("/store/inventory/:medicineId",
+  checkPermission("updateMedicine"),
+  storeKepperController.updateMedicine
+);
+router.delete("/store/inventory/:medicineId",
+  checkPermission("deleteMedicine"),
+  storeKepperController.deleteMedicine
 );
 
-// Tạo hóa đơn
-router.post("/invoices", 
-  checkPermission("handleInvoices"),
-  cashierController.createInvoice
+// EQUIPMENT
+router.get("/store/equipment",
+  checkPermission("viewEquipment"),
+  storeKepperController.viewEquipment
 );
-
-// Xử lý thanh toán hóa đơn
-router.post("/invoices/:invoiceId/payment", 
-  checkPermission("handleInvoices"),
-  cashierController.processPayment
+router.post("/store/equipment",
+  checkPermission("createEquipment"),
+  storeKepperController.createEquipment
 );
-
-// Xem danh sách hóa đơn
-router.get("/invoices", 
-  checkPermission("handleInvoices"),
-  cashierController.getInvoices
+router.put("/store/equipment/:equipmentId",
+  checkPermission("updateEquipment"),
+  storeKepperController.updateEquipment
 );
-
-// ==================== GENERAL ROUTES ====================
+router.delete("/store/equipment/:equipmentId",
+  checkPermission("deleteEquipment"),
+  storeKepperController.deleteEquipment
+);
 
 // Báo cáo thiết bị hỏng
-router.post("/equipment/issues", 
+router.post("/store/equipment/issues",
   checkPermission("reportEquipment"),
-  generalController.reportEquipmentIssue
+  storeKepperController.reportEquipment
 );
 
-router.get("/equipment/issues", 
-  checkPermission("reportEquipment"),
-  generalController.getEquipmentIssues
-);
-
-router.put("/equipment/issues/:issueId", 
-  checkPermission("reportEquipment"),
-  generalController.updateEquipmentIssue
-);
-
-// Xem danh sách thiết bị
-router.get("/equipment", 
-  checkPermission("reportEquipment"),
-  generalController.getEquipment
-);
-
-router.get("/equipment/:equipmentId", 
-  checkPermission("reportEquipment"),
-  generalController.getEquipmentDetail
-);
-
-// Xem tồn kho thuốc
-router.get("/inventory", 
-  checkPermission("viewInventory"),
-  generalController.getInventory
-);
-
-router.get("/inventory/stats", 
-  checkPermission("viewInventory"),
-  generalController.getInventoryStats
-);
-
-router.get("/inventory/:medicineId", 
-  checkPermission("viewInventory"),
-  generalController.getMedicineDetail
+// Chỉnh sửa hồ sơ cá nhân (store keeper)
+router.put("/store/profile",
+  checkPermission("editOwnProfileStore"),
+  storeKepperController.editOwnProfileStore
 );
 
 
