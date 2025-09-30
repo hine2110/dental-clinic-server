@@ -14,25 +14,32 @@ const checkStaffRole = async (req, res, next) => {
     console.log('🔍 Debug - User ID:', req.user.id);
     console.log('🔍 Debug - User role:', req.user.role);
     
-    const staff = await Staff.findOne({ user: req.user.id });
-    console.log('🔍 Debug - Staff found:', staff);
-    
+    let staff = await Staff.findOne({ user: req.user.id });
+    console.log('🔍 Debug - Staff found (Staff model):', staff);
+
     if (!staff) {
-      // Debug: Kiểm tra tất cả staff trong database
-      const allStaff = await Staff.find({});
-      console.log('🔍 Debug - All staff in DB:', allStaff.map(s => ({ id: s._id, user: s.user, staffType: s.staffType })));
-      
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy thông tin staff",
-        debug: {
-          userId: req.user.id,
-          userRole: req.user.role,
-          totalStaffInDB: allStaff.length
-        }
-      });
+      const management = await Management.findOne({ user: req.user.id });
+      console.log('🔍 Debug - Staff found (Management model):', management);
+      if (!management) {
+        // Debug: Kiểm tra tất cả staff trong database
+        const allStaff = await Staff.find({});
+        const allManagement = await Management.find({});
+        console.log('🔍 Debug - All Staff in DB:', allStaff.map(s => ({ id: s._id, user: s.user, staffType: s.staffType })));
+        console.log('🔍 Debug - All Management in DB:', allManagement.map(m => ({ id: m._id, user: m.user, staffType: m.staffType })));
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy thông tin staff",
+          debug: {
+            userId: req.user.id,
+            userRole: req.user.role,
+            totalStaffInDB: allStaff.length,
+            totalManagementInDB: allManagement.length
+          }
+        });
+      }
+      staff = management;
     }
-    
+
     req.staff = staff; // Gắn thông tin staff vào request
     next();
   } catch (error) {
@@ -76,3 +83,7 @@ module.exports = {
   checkPermission,
   checkStaffType
 };
+
+
+
+
