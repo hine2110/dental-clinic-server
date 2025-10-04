@@ -5,14 +5,14 @@ const appointmentSchema = new mongoose.Schema(
     appointmentId: { type: String, unique: true },
     doctor: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", required: true },
     patient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient", required: true },
-    staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" }, // Receptionist xử lý booking
+    staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
     schedule: { type: mongoose.Schema.Types.ObjectId, ref: "DoctorSchedule" },
     appointmentDate: { type: Date },
     startTime: { type: String },
     endTime: { type: String },
     status: {
       type: String,
-      enum: ["pending", "confirmed"],
+      enum: ["pending", "confirmed", "cancelled"],
       default: "pending",
     },
     reasonForVisit: { type: String, trim: true },

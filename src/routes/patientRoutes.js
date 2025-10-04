@@ -3,6 +3,13 @@ const router = express.Router();
 const { authenticate } = require('../middlewares/auth');
 const { getPatientProfile, createOrUpdateProfile, getProfileStatus } = require('../controllers/patientProfileController');
 const { getPatientServices, getPatientServiceById, getPatientServiceCategories } = require('../controllers/patientServiceController');
+const { 
+  getAvailableTimeSlots: getAvailableTimeSlotsAPI, 
+  getAvailableDoctors: getAvailableDoctorsAPI, 
+  createAppointment, 
+  getPatientAppointments, 
+  cancelAppointment 
+} = require('../controllers/patientAppointmentController');
 
 // ==================== PATIENT PROFILE ====================
 
@@ -25,5 +32,22 @@ router.get('/services/categories', getPatientServiceCategories);
 
 // GET /api/patient/services/:id - Lấy service theo ID
 router.get('/services/:id', getPatientServiceById);
+
+// ==================== PATIENT APPOINTMENTS ====================
+
+// GET /api/patient/appointments/available-times - Lấy danh sách giờ khả dụng
+router.get('/appointments/available-times', getAvailableTimeSlotsAPI);
+
+// GET /api/patient/appointments/available-doctors - Lấy danh sách bác sĩ khả dụng
+router.get('/appointments/available-doctors', getAvailableDoctorsAPI);
+
+// POST /api/patient/appointments - Đặt lịch hẹn
+router.post('/appointments', authenticate, createAppointment);
+
+// GET /api/patient/appointments - Lấy danh sách lịch hẹn của bệnh nhân
+router.get('/appointments', authenticate, getPatientAppointments);
+
+// DELETE /api/patient/appointments/:appointmentId - Hủy lịch hẹn
+router.delete('/appointments/:appointmentId', authenticate, cancelAppointment);
 
 module.exports = router;

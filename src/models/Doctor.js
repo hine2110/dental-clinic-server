@@ -39,15 +39,17 @@ const doctorSchema = new mongoose.Schema(
         description: { type: String, trim: true }
       }]
     },
-      // Thông tin cá nhân
-      biography: { type: String, trim: true },
-      languages: [{ type: String, trim: true }],
-      
-      // Trạng thái
-      isAcceptingNewPatients: { type: Boolean, default: true },
-      isActive: { type: Boolean, default: true }
-    },
-    { timestamps: true }
+    
+    // Thông tin cá nhân
+    biography: { type: String, trim: true },
+    languages: [{ type: String, trim: true }],
+    
+    // Trạng thái
+    isAcceptingNewPatients: { type: Boolean, default: true },
+    isActive: { type: Boolean, default: true }
+    // Dấu } thừa đã được xóa ở đây
+  },
+  { timestamps: true }
 );
 
 module.exports = mongoose.model("Doctor", doctorSchema);
