@@ -29,15 +29,9 @@ const getPatientProfile = async (req, res) => {
 // tao hoac cap nhat profile
 const createOrUpdateProfile = async (req, res) => {
     try {
-        console.log('📝 Create/Update Profile Request:', JSON.stringify(req.body, null, 2));
-        console.log('📝 User ID:', req.user._id);
         const userId = req.user._id;
+        const userEmail = req.user.email;
 
-        //validate input data
-        console.log('🔍 Validating data structure:');
-        console.log('- basicInfo:', req.body.basicInfo);
-        console.log('- contactInfo:', req.body.contactInfo);
-        
         const validation = validatePatientProfile(req.body);
         if (!validation.isValid) {
             console.log('❌ Validation failed:', validation.errors);
@@ -59,6 +53,7 @@ const createOrUpdateProfile = async (req, res) => {
             insuranceInfo = ""
         } = req.body;
 
+        const finalContactInfo = { ...contactInfo, email: userEmail };
         // Xử lý medicalHistory và allergies - chuyển từ string sang array nếu cần
         let processedMedicalHistory = [];
         let processedAllergies = [];
@@ -85,17 +80,12 @@ const createOrUpdateProfile = async (req, res) => {
             processedAllergies = allergies;
         }
 
-        console.log('🔧 Processed data:');
-        console.log('- medicalHistory:', processedMedicalHistory);
-        console.log('- allergies:', processedAllergies);
-
         //tim hoac tao patient profile
         let patient = await Patient.findOne({ user: userId });
         console.log('🔍 Existing patient found:', patient ? 'Yes' : 'No');
 
         if (patient) {
             //cap nhat profile hien co 
-            console.log('📝 Updating existing patient profile');
             patient.basicInfo = { 
                 ...patient.basicInfo, 
                 ...basicInfo,
@@ -106,7 +96,7 @@ const createOrUpdateProfile = async (req, res) => {
             };
             patient.medicalHistory = processedMedicalHistory;
             patient.allergies = processedAllergies;
-            patient.contactInfo = contactInfo;
+            patient.contactInfo = finalContactInfo;
             patient.emergencyContact = { ...patient.emergencyContact, ...emergencyContact };
             patient.insuranceInfo = insuranceInfo;
             patient.isProfileComplete = true;
@@ -116,7 +106,6 @@ const createOrUpdateProfile = async (req, res) => {
             console.log('✅ Patient profile updated successfully');
         } else {
             //tao profile moi 
-            console.log('📝 Creating new patient profile');
             const newPatientData = {
                 user: userId,
                 basicInfo: {
@@ -128,7 +117,7 @@ const createOrUpdateProfile = async (req, res) => {
                 },
                 medicalHistory: processedMedicalHistory,
                 allergies: processedAllergies,
-                contactInfo,
+                contactInfo: finalContactInfo,
                 emergencyContact,
                 insuranceInfo,
                 isProfileComplete: true,

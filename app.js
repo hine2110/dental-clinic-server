@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const passport = require("passport");
 require("dotenv").config();
+const session = require('express-session');
+const { webhook } = require('./src/controllers/stripeController');
 
 const connectDB = require("./src/config/database");
 
@@ -10,6 +12,9 @@ const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB
 connectDB();
+
+// Stripe webhook must be defined BEFORE any body parser (needs raw body)
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), webhook);
 
 // Middleware
 app.use(
@@ -21,6 +26,17 @@ app.use(
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+app.use(session({
+  secret: process.env.SESSION_SECRET, 
+  resave: false,
+  saveUninitialized: true,
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 1000 * 60 * 60 * 24 // 1 day
+  }
+}));
+// ===========================================
 
 // Passport middleware
 app.use(passport.initialize());
@@ -34,30 +50,16 @@ const staffRoutes = require("./src/routes/staffRoutes");
 const managementRoutes = require("./src/routes/managementRoutes");
 const adminRoutes = require("./src/routes/adminRoutes");
 const patientRoutes = require("./src/routes/patientRoutes");
+const stripeRoutes = require('./src/routes/stripeRoutes');
 
 // Basic route
 app.get("/", (req, res) => {
-  res.json({
-    message: "Dental Clinic Management API",
-    status: "Server is running successfully",
-    version: "1.0.0",
-    endpoints: {
-      auth: "/api/auth",
-      staff: "/api/staff",
-      admin: "/api/admin",
-      health: "/health",
-    },
-  });
+  res.json({ message: "Dental Clinic Management API" });
 });
 
 // Health check route
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    database: "Connected",
-  });
+  res.status(200).json({ status: "OK" });
 });
 
 // Routes
@@ -66,8 +68,9 @@ app.use("/api/staff", staffRoutes);
 app.use("/api/management", managementRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/patient", patientRoutes);
+app.use('/api/stripe', stripeRoutes);
 
-// 404 handler - must be last
+// 404 handler - must be last before error handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
