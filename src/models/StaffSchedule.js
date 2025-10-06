@@ -34,7 +34,7 @@ const staffScheduleSchema = new mongoose.Schema(
     },
     // Thời gian nghỉ trưa cố định
     breakTime: {
-      startTime: { type: String, default: "11:30" },
+      startTime: { type: String, default: "12:00" },
       endTime: { type: String, default: "13:00" }
     },
     // Người tạo lịch

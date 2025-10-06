@@ -7,7 +7,7 @@ const serviceSchema = new mongoose.Schema(
     description: { type: String, trim: true },
     category: { type: String, trim: true, required: true },
     price: { type: Number, required: true, min: 0 },
-    process: [{
+    process: [{ 
       step: { type: Number, required: true },
       title: { type: String, trim: true, required: true },
       description: { type: String, trim: true, required: true }
