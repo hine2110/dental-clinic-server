@@ -15,6 +15,7 @@ const Verification = require("./Verification");
 const EquipmentIssue = require("./EquipmentIssue");
 const DispenseMedicine = require("./DispenseMedicine");
 const Notification = require("./Notification");
+const Management = require("./Management");
 
 module.exports = {
   User,
@@ -33,4 +34,5 @@ module.exports = {
   EquipmentIssue,
   DispenseMedicine,
   Notification,
+  Management,
 };

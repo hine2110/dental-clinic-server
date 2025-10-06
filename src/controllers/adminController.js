@@ -1,9 +1,18 @@
-const { User, Staff, Doctor, Admin } = require("../models");
+const { User, Staff, Doctor, Admin, Management } = require("../models");
 
 const createStaffAccount = async (req, res) => {
   try {
     const { email, role, firstName, lastName, phone, temporaryPassword } =
       req.body;
+
+    // Basic validation for required core fields
+    if (!email || !role || !firstName || !lastName) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Missing required fields: email, role, firstName, lastName are required",
+      });
+    }
 
     // Check if user has permission to create accounts (Admin only)
     if (req.user.role !== "admin") {
@@ -13,12 +22,12 @@ const createStaffAccount = async (req, res) => {
       });
     }
 
-    // Validate role - only doctor, staff
-    const allowedRoles = ["doctor", "staff"];
+    // Validate role - allow doctor, staff, management
+    const allowedRoles = ["doctor", "staff", "management"];
     if (!allowedRoles.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid role. Allowed roles: doctor, staff",
+        message: "Invalid role. Allowed roles: doctor, staff, management",
       });
     }
 
@@ -46,31 +55,119 @@ const createStaffAccount = async (req, res) => {
 
     // Create corresponding profile based on role
     if (role === "staff") {
+      const { staffType } = req.body;
+      const allowedStaffTypes = ["receptionist", "storeKepper"];
+      if (!staffType || !allowedStaffTypes.includes(staffType)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid or missing staffType. Allowed: receptionist, storeKepper",
+        });
+      }
+      const normalizedStaffType = staffType;
+
+      // Sensible default permissions per staff type
+      const receptionistDefaults = {
+        acceptPatientBooking: true,
+        processDeposit: true,
+        sendNotifications: true,
+        viewReceptionistSchedule: true,
+        viewPatientInfo: true,
+        editOwnProfile: true,
+        // store keeper specific remain false by default
+        viewStoreKepperSchedule: false,
+        viewPrescriptions: false,
+        dispenseMedicines: false,
+        viewInventory: false,
+        createMedicine: false,
+        updateMedicine: false,
+        deleteMedicine: false,
+        viewEquipment: false,
+        createEquipment: false,
+        updateEquipment: false,
+        deleteEquipment: false,
+        reportEquipment: false,
+        editOwnProfileStore: false,
+      };
+
+      const storeKeeperDefaults = {
+        acceptPatientBooking: false,
+        processDeposit: false,
+        sendNotifications: false,
+        viewReceptionistSchedule: false,
+        viewPatientInfo: false,
+        editOwnProfile: false,
+        // store keeper focused
+        viewStoreKepperSchedule: true,
+        viewPrescriptions: true,
+        dispenseMedicines: true,
+        viewInventory: true,
+        createMedicine: true,
+        updateMedicine: true,
+        deleteMedicine: false,
+        viewEquipment: true,
+        createEquipment: false,
+        updateEquipment: true,
+        deleteEquipment: false,
+        reportEquipment: true,
+        editOwnProfileStore: true,
+      };
+
+      const permissions =
+        normalizedStaffType === "receptionist"
+          ? receptionistDefaults
+          : storeKeeperDefaults;
+
       await Staff.create({
         user: user._id,
-        permissions: {
-          handlePrescriptions: false,
-          dispenseMedicines: false,
-          reportEquipment: false,
-          handleInvoices: false,
-        },
+        staffType: normalizedStaffType,
+        permissions,
       });
     } else if (role === "doctor") {
-      // Generate doctorId
-      const doctorId = `DOC${Date.now()}${Math.random()
-        .toString(36)
-        .slice(-4)
-        .toUpperCase()}`;
+      // Generate doctorId or use provided
+      const providedDoctorId = req.body.doctorId;
+      const doctorId =
+        providedDoctorId ||
+        `DOC${Date.now()}${Math.random().toString(36).slice(-4).toUpperCase()}`;
 
-      // Create Doctor profile with default values
-      // Admin can update these later with proper information
+      // Create Doctor profile aligned with current schema
       await Doctor.create({
         doctorId,
         user: user._id,
-        license: "PENDING", // Admin needs to update
-        specializations: "General Dentistry", // Admin needs to update
-        workSchedule: "To be determined", // Admin needs to update
-        consultationFee: 0, // Admin needs to update
+        credentials: {
+          medicalLicense: req.body.medicalLicense || "PENDING",
+          dentalLicense: req.body.dentalLicense || "PENDING",
+        },
+        specializations:
+          Array.isArray(req.body.specializations) &&
+          req.body.specializations.length > 0
+            ? req.body.specializations
+            : ["General Dentistry"],
+        isAcceptingNewPatients: true,
+        isActive: true,
+      });
+    } else if (role === "management") {
+      // Create Management profile with sensible defaults
+      await Management.create({
+        user: user._id,
+        staffType: "management",
+        permissions: {
+          createDoctorSchedule: true,
+          createReceptionistSchedule: true,
+          createStoreKepperSchedule: true,
+          viewDoctorProfile: true,
+          viewStaffProfile: true,
+          viewDoctorSchedule: true,
+          viewStaffSchedule: true,
+          updateDoctorSchedule: true,
+          updateStaffSchedule: true,
+          deleteDoctorSchedule: false,
+          deleteStaffSchedule: false,
+          viewEquipmentDamageReports: true,
+          viewRevenueWeekly: true,
+          viewRevenueMonthly: true,
+          viewRevenueYearly: true,
+        },
       });
     }
 
@@ -85,6 +182,23 @@ const createStaffAccount = async (req, res) => {
           role: user.role,
           phone: user.phone,
         },
+        roleDetails:
+          role === "staff"
+            ? { staffType: req.body.staffType || "receptionist" }
+            : role === "doctor"
+            ? {
+                doctorId: req.body.doctorId || "generated",
+                medicalLicense: req.body.medicalLicense || "PENDING",
+                dentalLicense: req.body.dentalLicense || "PENDING",
+                specializations:
+                  Array.isArray(req.body.specializations) &&
+                  req.body.specializations.length > 0
+                    ? req.body.specializations
+                    : ["General Dentistry"],
+              }
+            : role === "management"
+            ? { staffType: "management" }
+            : {},
         temporaryPassword: plainPassword,
         note: "Please change password on first login",
       },
@@ -104,6 +218,7 @@ const createStaffAccount = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error creating account",
+      ...(process.env.NODE_ENV === "development" && { error: error.message }),
     });
   }
 };

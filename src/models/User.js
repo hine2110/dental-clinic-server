@@ -45,7 +45,7 @@ const userSchema = new mongoose.Schema(
     lastLogin: { type: Date },
     isProfileComplete: {
       type: Boolean,
-      default: false
+      default: false,
     },
   },
   {
