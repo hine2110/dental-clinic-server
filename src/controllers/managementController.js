@@ -21,10 +21,10 @@ const isFourHourShift = (startTime, endTime) => {
 };
 
 const hasRequiredLunchBreak = (startTime, endTime) => {
-  // Require break 11:00-13:00 to be inside the shift window for fulltime
+  // Require break 12:00-13:00 to be inside the shift window for fulltime
   const s = parseTimeToMinutes(startTime);
   const e = parseTimeToMinutes(endTime);
-  const breakStart = parseTimeToMinutes("11:00");
+  const breakStart = parseTimeToMinutes("12:00");
   const breakEnd = parseTimeToMinutes("13:00");
   return s <= breakStart && e >= breakEnd;
 };

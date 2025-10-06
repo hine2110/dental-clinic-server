@@ -1,11 +1,5 @@
-const Appointment = require("../models/Appointment");
-const DoctorSchedule = require("../models/DoctorSchedule");
-const Doctor = require("../models/Doctor");
-const Patient = require("../models/Patient");
-const Location = require("../models/Location");
-const Notification = require("../models/Notification");
-
-
+const { Appointment, DoctorSchedule, Doctor, Patient, Location, Notification } = require("../models");
+const { formatInTimeZone } = require('date-fns-tz');
 // ==================== UTILITY FUNCTIONS ====================
 
 /**
@@ -14,16 +8,15 @@ const Notification = require("../models/Notification");
  * @param {String} locationId - ID cơ sở
  * @returns {Array} - Danh sách giờ khả dụng
  */
-const getAvailableTimeSlots = (date, locationId) => {
+const getBaseTimeSlots = () => {
   const timeSlots = [
-    "07:00", "08:00", "09:00", "10:00", "11:00", 
+    "07:00", "08:00", "09:00", "10:00", "11:00",
     "13:00", "14:00", "15:00", "16:00"
   ];
-  
   return timeSlots.map(time => ({
     time,
     displayTime: `${time.split(':')[0]}h`,
-    isAvailable: true
+    isAvailable: false
   }));
 };
 
@@ -156,42 +149,85 @@ const getAvailableTimeSlotsAPI = async (req, res) => {
     const { date, locationId } = req.query;
 
     if (!date || !locationId) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu thông tin ngày hoặc cơ sở"
-      });
+      return res.status(400).json({ success: false, message: "Thiếu thông tin ngày hoặc cơ sở" });
     }
 
     const appointmentDate = new Date(date);
-    if (isNaN(appointmentDate.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: "Ngày không hợp lệ"
+    // Sử dụng múi giờ Việt Nam để so sánh
+    const todayInVietnam = new Date(formatInTimeZone(new Date(), 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd HH:mm:ss'));
+    
+    const todayStart = new Date(todayInVietnam);
+    todayStart.setHours(0, 0, 0, 0);
+
+    if (appointmentDate < todayStart) {
+      // Trả về danh sách trống thay vì lỗi để frontend có thể hiển thị
+      const emptyTimeSlots = getBaseTimeSlots().map(slot => ({ ...slot, isAvailable: false }));
+      return res.status(200).json({
+          success: true,
+          message: "Ngày đã chọn nằm trong quá khứ.",
+          data: {
+              date: appointmentDate.toISOString().split('T')[0],
+              locationId,
+              timeSlots: emptyTimeSlots
+          }
       });
     }
 
-    // Kiểm tra ngày không được trong quá khứ
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (appointmentDate < today) {
-      return res.status(400).json({
-        success: false,
-        message: "Không thể đặt lịch trong quá khứ"
-      });
-    }
+    const targetDateStart = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
+    const targetDateEnd = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate() + 1);
 
-    // Lấy danh sách giờ cơ bản
-    const timeSlots = getAvailableTimeSlots(appointmentDate, locationId);
+    // Dùng Promise.all để chạy song song 2 truy vấn
+    const [allSchedules, allAppointments] = await Promise.all([
+        DoctorSchedule.find({
+            location: locationId,
+            date: { $gte: targetDateStart, $lt: targetDateEnd },
+            isAvailable: true
+        }).select('doctor startTime endTime'),
+        Appointment.find({
+            appointmentDate: { $gte: targetDateStart, $lt: targetDateEnd },
+            status: { $in: ["pending", "confirmed"] }
+        }).select('doctor startTime')
+    ]);
 
-    // Kiểm tra từng giờ có bác sĩ khả dụng không
-    const availableTimeSlots = [];
-    for (const slot of timeSlots) {
-      const isAvailable = await isTimeSlotAvailable(slot.time, appointmentDate, locationId);
-      availableTimeSlots.push({
-        ...slot,
-        isAvailable
+    const timeSlots = getBaseTimeSlots();
+    const isToday = appointmentDate.toDateString() === todayInVietnam.toDateString();
+    const earliestBookableHour = isToday ? todayInVietnam.getHours() + 2 : -1;
+
+    const availableTimeSlots = timeSlots.map(slot => {
+      const time = slot.time;
+      const slotHour = parseInt(time.split(':')[0]);
+
+      if (isToday && slotHour < earliestBookableHour) {
+        return { ...slot, isAvailable: false };
+      }
+
+      const doctorsOnShift = new Set();
+      allSchedules.forEach(schedule => {
+        if (schedule.startTime <= time && schedule.endTime > time) {
+          doctorsOnShift.add(schedule.doctor.toString());
+        }
       });
-    }
+
+      if (doctorsOnShift.size === 0) {
+        return { ...slot, isAvailable: false };
+      }
+
+      const doctorsBooked = new Set();
+      allAppointments.forEach(appointment => {
+        if (appointment.startTime === time) {
+          doctorsBooked.add(appointment.doctor.toString());
+        }
+      });
+
+      let availableDoctorCount = 0;
+      doctorsOnShift.forEach(doctorId => {
+        if (!doctorsBooked.has(doctorId)) {
+          availableDoctorCount++;
+        }
+      });
+
+      return { ...slot, isAvailable: availableDoctorCount > 0 };
+    });
 
     res.status(200).json({
       success: true,
@@ -202,13 +238,10 @@ const getAvailableTimeSlotsAPI = async (req, res) => {
         timeSlots: availableTimeSlots
       }
     });
+
   } catch (error) {
     console.error("Get available time slots error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy danh sách giờ khả dụng",
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: "Lỗi khi lấy danh sách giờ khả dụng" });
   }
 };
 
