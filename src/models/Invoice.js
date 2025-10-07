@@ -8,11 +8,6 @@ const invoiceSchema = new mongoose.Schema(
     patient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient", required: true },
     invoiceDate: { type: Date, default: Date.now },
     total: { type: Number },
-    paymentStatus: {
-      type: String,
-      enum: ["pending", "paid"],
-      default: "pending",
-    },
     paymentMethod: {
       type: String,
       enum: ["cash", "card", "insurance"],

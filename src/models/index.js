@@ -13,7 +13,6 @@ const Prescription = require("./Prescription");
 const Medicine = require("./Medicine");
 const Verification = require("./Verification");
 const EquipmentIssue = require("./EquipmentIssue");
-const DispenseMedicine = require("./DispenseMedicine");
 const Notification = require("./Notification");
 const Management = require("./Management");
 
@@ -32,7 +31,6 @@ module.exports = {
   Medicine,
   Verification,
   EquipmentIssue,
-  DispenseMedicine,
   Notification,
   Management,
 };

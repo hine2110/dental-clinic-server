@@ -21,17 +21,14 @@ const staffSchema = new mongoose.Schema(
     profile: profileSchema,
     permissions: {
       // Receptionist permissions
-      acceptPatientBooking: { type: Boolean, default: false }, // duyệt booking
-      processDeposit: { type: Boolean, default: false }, // thu tiền cọc cố định 35,000 VND
-      sendNotifications: { type: Boolean, default: false }, // gửi thông báo tới bệnh nhân/bác sĩ
       viewReceptionistSchedule: { type: Boolean, default: false }, // xem lịch làm việc
       viewPatientInfo: { type: Boolean, default: false }, // xem thông tin bệnh nhân
       editOwnProfile: { type: Boolean, default: false }, // chỉnh sửa hồ sơ cá nhân
+      createInvoice: { type: Boolean, default: false }, // tạo hóa đơn
 
       // Store keeper permissions
       viewStoreKepperSchedule: { type: Boolean, default: false }, // xem lịch làm việc
       viewPrescriptions: { type: Boolean, default: false }, // xem đơn thuốc bác sĩ kê
-      dispenseMedicines: { type: Boolean, default: false }, // bốc thuốc theo đơn
 
       // Inventory management
       viewInventory: { type: Boolean, default: false }, // xem danh sách thuốc trong kho

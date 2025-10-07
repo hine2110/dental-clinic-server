@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 
 const equipmentIssueSchema = new mongoose.Schema(
   {
-    issueId: { type: String, unique: true },
     equipment: { type: mongoose.Schema.Types.ObjectId, ref: "Equipment", required: true },
     reporter: { type: mongoose.Schema.Types.ObjectId, ref: "Staff", required: true },
     issueDescription: { type: String, required: true, trim: true },
