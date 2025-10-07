@@ -11,6 +11,7 @@ const createService = async (req, res) => {
       price,
       duration,
       isActive,
+      process,
     } = req.body;
 
     // Validate required fields
@@ -41,6 +42,24 @@ const createService = async (req, res) => {
       isActive:
         isActive === "true" || isActive === true || isActive === undefined,
     };
+
+    // Parse process if provided (JSON string or array)
+    if (process) {
+      try {
+        const parsed = Array.isArray(process) ? process : JSON.parse(process);
+        if (Array.isArray(parsed)) {
+          serviceData.process = parsed
+            .map((s, idx) => ({
+              step: Number(s.step) || idx + 1,
+              title: (s.title || "").trim(),
+              description: (s.description || "").trim(),
+            }))
+            .filter((s) => s.title || s.description);
+        }
+      } catch (err) {
+        // ignore parse error; server will still create service without process
+      }
+    }
 
     // Add image data if file was uploaded
     if (req.file) {
@@ -202,7 +221,8 @@ const getServiceById = async (req, res) => {
 const updateService = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, category, price, duration, isActive } = req.body;
+    const { name, description, category, price, duration, isActive, process } =
+      req.body;
 
     // Check if service exists
     const service = await Service.findById(id);
@@ -268,6 +288,24 @@ const updateService = async (req, res) => {
       updateData.duration = duration ? parseInt(duration) : undefined;
     if (isActive !== undefined)
       updateData.isActive = isActive === "true" || isActive === true;
+
+    // Update process if provided
+    if (process !== undefined) {
+      try {
+        const parsed = Array.isArray(process) ? process : JSON.parse(process);
+        if (Array.isArray(parsed)) {
+          updateData.process = parsed
+            .map((s, idx) => ({
+              step: Number(s.step) || idx + 1,
+              title: (s.title || "").trim(),
+              description: (s.description || "").trim(),
+            }))
+            .filter((s) => s.title || s.description);
+        }
+      } catch (err) {
+        // ignore parsing issue
+      }
+    }
 
     // Add image data if new file was uploaded
     if (req.file) {
