@@ -2,7 +2,6 @@ const Staff = require("../models/Staff");
 const StaffSchedule = require("../models/StaffSchedule");
 const Prescription = require("../models/Prescription");
 const Medicine = require("../models/Medicine");
-const DispenseMedicine = require("../models/DispenseMedicine");
 const Equipment = require("../models/Equipment");
 const EquipmentIssue = require("../models/EquipmentIssue");
 
@@ -77,79 +76,7 @@ const viewPrescriptions = async (req, res) => {
   }
 };
 
-// 3. Lấy thuốc từ kho theo đơn của bác sĩ và trừ tồn kho
-// Body: { prescriptionId, patientId, items: [{ medicineId, quantity, unitPrice }], notes }
-const dispenseMedicines = async (req, res) => {
-  try {
-    const staffId = req.staff._id;
-    const { prescriptionId, patientId, items = [], notes } = req.body;
-
-    if (!prescriptionId || !patientId || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu dữ liệu: prescriptionId, patientId, items",
-      });
-    }
-
-    const prescription = await Prescription.findById(prescriptionId);
-    if (!prescription) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy đơn thuốc" });
-    }
-
-    const results = [];
-    for (const item of items) {
-      const { medicineId, quantity, unitPrice } = item;
-      if (!medicineId || !quantity || quantity <= 0 || !unitPrice || unitPrice <= 0) {
-        throw new Error("Dữ liệu thuốc không hợp lệ");
-      }
-
-      // Atomic stock decrement without transaction
-      const updatedMed = await Medicine.findOneAndUpdate(
-        { _id: medicineId, currentStock: { $gte: quantity } },
-        { $inc: { currentStock: -quantity } },
-        { new: true }
-      );
-      if (!updatedMed) {
-        throw new Error("Thuốc không đủ tồn kho hoặc không tồn tại");
-      }
-
-      // Generate a readable sequential dispenseId if not provided
-      const existingCount = await DispenseMedicine.countDocuments();
-      const nextDispenseId = `DISP${String(existingCount + 1).padStart(6, "0")}`;
-
-      const dispensed = new DispenseMedicine({
-        dispenseId: nextDispenseId,
-        prescription: prescriptionId,
-        medicine: medicineId,
-        staff: staffId,
-        patient: patientId,
-        quantity,
-        unitPrice,
-        totalPrice: quantity * unitPrice,
-        notes,
-        status: "dispensed",
-      });
-      await dispensed.save();
-      results.push(dispensed);
-    }
-
-    // Update prescription status to a valid enum in Prescription model
-    prescription.status = "completed";
-    await prescription.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Xuất thuốc và cập nhật tồn kho thành công",
-      data: { dispenses: results, prescription },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi xuất thuốc",
-      error: error.message,
-    });
-  }
-};
+// 3. Lấy thuốc từ kho theo đơn (đã chuyển sang receptionistStaffController)
 
 // 4. INVENTORY - Thuốc: xem, tạo, cập nhật, xóa
 const viewInventory = async (req, res) => {
@@ -186,6 +113,21 @@ const updateMedicine = async (req, res) => {
   try {
     const { medicineId } = req.params;
     const update = req.body || {};
+    
+    // Nếu có currentStock trong body, cộng dồn vào currentStock hiện tại
+    if (update.currentStock !== undefined) {
+      const currentMedicine = await Medicine.findById(medicineId);
+      if (!currentMedicine) {
+        return res.status(404).json({ success: false, message: "Không tìm thấy thuốc" });
+      }
+      
+      // Cộng dồn: newCurrentStock = currentStock (trong kho) + currentStock (vừa nhập)
+      // Đảm bảo cả hai đều là number để cộng số học
+      const currentStockInDB = Number(currentMedicine.currentStock) || 0;
+      const currentStockToAdd = Number(update.currentStock) || 0;
+      update.currentStock = currentStockInDB + currentStockToAdd;
+    }
+    
     const updated = await Medicine.findByIdAndUpdate(medicineId, update, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thuốc" });
     res.status(200).json({ success: true, message: "Cập nhật thuốc thành công", data: updated });
@@ -224,10 +166,7 @@ const createEquipment = async (req, res) => {
     if (!data.name) {
       return res.status(400).json({ success: false, message: "Thiếu tên thiết bị" });
     }
-    if (!data.equipmentId) {
-      const count = await Equipment.countDocuments();
-      data.equipmentId = `EQ${String(count + 1).padStart(4, "0")}`;
-    }
+    // MongoDB sẽ tự động tạo _id
     const created = new Equipment(data);
     await created.save();
     res.status(201).json({ success: true, message: "Tạo thiết bị thành công", data: created });
@@ -238,7 +177,7 @@ const createEquipment = async (req, res) => {
 
 const updateEquipment = async (req, res) => {
   try {
-    const { equipmentId } = req.params;
+    const { equipmentId } = req.params; // equipmentId trong params thực chất là _id
     const update = req.body || {};
     const updated = await Equipment.findByIdAndUpdate(equipmentId, update, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thiết bị" });
@@ -250,7 +189,7 @@ const updateEquipment = async (req, res) => {
 
 const deleteEquipment = async (req, res) => {
   try {
-    const { equipmentId } = req.params;
+    const { equipmentId } = req.params; // equipmentId trong params thực chất là _id
     const deleted = await Equipment.findByIdAndDelete(equipmentId);
     if (!deleted) return res.status(404).json({ success: false, message: "Không tìm thấy thiết bị" });
     res.status(200).json({ success: true, message: "Xóa thiết bị thành công", data: deleted });
@@ -263,16 +202,28 @@ const deleteEquipment = async (req, res) => {
 const reportEquipment = async (req, res) => {
   try {
     const staffId = req.staff._id;
-    const data = req.body || {};
-    if (!data.equipment || !data.issueDescription) {
+    const { equipment, equipmentId, issueDescription, priority, severity, status, adminNotes, estimatedRepairCost, images } = req.body;
+    
+    // Hỗ trợ cả equipment và equipmentId
+    const equipmentObjectId = equipment || equipmentId;
+    
+    if (!equipmentObjectId || !issueDescription) {
       return res.status(400).json({ success: false, message: "Thiếu thông tin thiết bị hoặc mô tả lỗi" });
     }
-    data.reporter = staffId;
-    if (!data.issueId) {
-      const count = await EquipmentIssue.countDocuments();
-      data.issueId = `ISS${String(count + 1).padStart(5, "0")}`;
-    }
-    const issue = new EquipmentIssue(data);
+    
+    // Tạo EquipmentIssue với MongoDB tự sinh _id
+    const issue = new EquipmentIssue({
+      equipment: equipmentObjectId,
+      reporter: staffId,
+      issueDescription,
+      priority,
+      severity,
+      status,
+      adminNotes,
+      estimatedRepairCost,
+      images
+    });
+    
     await issue.save();
     res.status(201).json({ success: true, message: "Báo cáo thiết bị thành công", data: issue });
   } catch (error) {
@@ -305,7 +256,6 @@ const editOwnProfileStore = async (req, res) => {
 module.exports = {
   viewStoreKepperSchedule,
   viewPrescriptions,
-  dispenseMedicines,
   viewInventory,
   createMedicine,
   updateMedicine,

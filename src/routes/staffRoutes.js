@@ -12,11 +12,6 @@ router.use(checkStaffRole);
 
 // ==================== RECEPTIONIST ROUTES ====================
 
-// Xem lịch bác sĩ
-router.get("/receptionist/schedules/doctors",
-  checkPermission("viewReceptionistSchedule"),
-  receptionistController.getDoctorSchedules
-);
 
 // Xem lịch làm việc của chính receptionist
 router.get("/receptionist/schedules/self",
@@ -30,33 +25,16 @@ router.get("/receptionist/patients/:patientId",
   receptionistController.viewPatientInfo
 );
 
-// Thu tiền cọc
-router.post("/receptionist/appointments/:appointmentId/deposit",
-  checkPermission("processDeposit"),
-  receptionistController.processDeposit
+// tạo hóa đơn
+router.post("/receptionist/invoices/create",
+  checkPermission("createInvoice"),
+  receptionistController.createInvoice
 );
 
-// Gửi hóa đơn theo prescription
-router.post("/receptionist/invoices/send",
-  checkPermission("sendInvoice"),
-  receptionistController.sendInvoice
-);
-
-// Chấp nhận đặt lịch của bệnh nhân
-router.put("/receptionist/appointments/:appointmentId/accept",
-  checkPermission("acceptPatientBooking"),
-  receptionistController.acceptPatientBooking
-);
-
-// Xem danh sách lịch hẹn chờ duyệt
-router.get("/receptionist/appointments/pending",
-  checkPermission("acceptPatientBooking"),
-  receptionistController.getPendingAppointments
-);
 
 // Xem danh sách lịch hẹn (tất cả)
 router.get("/receptionist/appointments",
-  checkPermission("acceptPatientBooking"),
+  checkPermission("viewPatientInfo"),
   receptionistController.getAppointments
 );
 
@@ -81,12 +59,6 @@ router.get("/store/prescriptions",
   storeKepperController.viewPrescriptions
 );
 
-// Xuất thuốc theo đơn
-router.post("/store/medicines/dispense",
-  checkPermission("dispenseMedicines"),
-  storeKepperController.dispenseMedicines
-);
-
 // INVENTORY - Thuốc
 router.get("/store/inventory",
   checkPermission("viewInventory"),
@@ -106,6 +78,12 @@ router.delete("/store/inventory/:medicineId",
 );
 
 // EQUIPMENT
+// Báo cáo thiết bị hỏng
+router.post("/store/equipment/issues",
+  checkPermission("reportEquipment"),
+  storeKepperController.reportEquipment
+);
+
 router.get("/store/equipment",
   checkPermission("viewEquipment"),
   storeKepperController.viewEquipment
@@ -123,11 +101,7 @@ router.delete("/store/equipment/:equipmentId",
   storeKepperController.deleteEquipment
 );
 
-// Báo cáo thiết bị hỏng
-router.post("/store/equipment/issues",
-  checkPermission("reportEquipment"),
-  storeKepperController.reportEquipment
-);
+
 
 // Chỉnh sửa hồ sơ cá nhân (store keeper)
 router.put("/store/profile",
