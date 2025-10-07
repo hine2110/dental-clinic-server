@@ -349,7 +349,44 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// Toggle user's active status (ban/unban) - separated function to match file format
+const toggleUserStatus = async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Permission denied. Only admin can toggle user status.",
+      });
+    }
+
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    user.isActive = !user.isActive;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: user.isActive
+        ? "User unbanned (activated)"
+        : "User banned (deactivated)",
+      data: { id: user._id, isActive: user.isActive },
+    });
+  } catch (error) {
+    console.error("Toggle user status error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error toggling user status" });
+  }
+};
+
 module.exports = {
   createStaffAccount,
   getAllUsers,
+  toggleUserStatus,
 };

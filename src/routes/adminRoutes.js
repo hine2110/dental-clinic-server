@@ -31,6 +31,9 @@ router.use(checkAdminRole);
 // GET /api/admin/users - Lấy danh sách tất cả users
 router.get("/users", adminController.getAllUsers);
 
+// PATCH /api/admin/users/:id/toggle-status - Ban/Unban user
+router.patch("/users/:id/toggle-status", adminController.toggleUserStatus);
+
 // POST /api/admin/create-account - Tạo tài khoản staff/doctor
 router.post("/create-account", adminController.createStaffAccount);
 
