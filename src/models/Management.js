@@ -6,10 +6,9 @@ const managementSchema = new mongoose.Schema(
     staffType: {
       type: String,
       enum: ["management"],
-      default: "management"
+      default: "management",
     },
     permissions: {
-
       // Scheduling permissions (management capabilities)
       createDoctorSchedule: { type: Boolean, default: false },
       createReceptionistSchedule: { type: Boolean, default: false },
@@ -39,5 +38,3 @@ const managementSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("Management", managementSchema);
-
-
