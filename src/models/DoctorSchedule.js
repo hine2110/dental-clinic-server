@@ -34,11 +34,11 @@ const doctorScheduleSchema = new mongoose.Schema(
     },
     createdBy: { 
       type: mongoose.Schema.Types.ObjectId, 
-      ref: "Staff", 
+      ref: "Management", 
       required: true 
     },
     breakTime: {
-      startTime: { type: String, default: "11:30" },
+      startTime: { type: String, default: "12:00" },
       endTime: { type: String, default: "13:00" }
     }
   },
