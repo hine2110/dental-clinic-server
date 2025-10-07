@@ -46,8 +46,36 @@ const doctorSchema = new mongoose.Schema(
     
     // Trạng thái
     isAcceptingNewPatients: { type: Boolean, default: true },
-    isActive: { type: Boolean, default: true }
-    // Dấu } thừa đã được xóa ở đây
+    isActive: { type: Boolean, default: true },
+    
+    // Phí khám
+    consultationFee: { type: Number, default: 0 },
+    
+    // Lịch làm việc định kỳ
+    workSchedule: {
+      monday: { startTime: String, endTime: String, isWorking: { type: Boolean, default: false } },
+      tuesday: { startTime: String, endTime: String, isWorking: { type: Boolean, default: false } },
+      wednesday: { startTime: String, endTime: String, isWorking: { type: Boolean, default: false } },
+      thursday: { startTime: String, endTime: String, isWorking: { type: Boolean, default: false } },
+      friday: { startTime: String, endTime: String, isWorking: { type: Boolean, default: false } },
+      saturday: { startTime: String, endTime: String, isWorking: { type: Boolean, default: false } },
+      sunday: { startTime: String, endTime: String, isWorking: { type: Boolean, default: false } }
+    },
+    
+    // Đánh giá
+    rating: { type: Number, default: 0, min: 0, max: 5 },
+    totalRatings: { type: Number, default: 0 },
+    
+    // Trạng thái khả dụng
+    availability: {
+      isOnline: { type: Boolean, default: false },
+      lastSeen: { type: Date },
+      status: { 
+        type: String, 
+        enum: ['available', 'busy', 'away', 'offline'], 
+        default: 'offline' 
+      }
+    }
   },
   { timestamps: true }
 );
