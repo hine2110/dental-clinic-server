@@ -2,8 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const passport = require("passport");
 require("dotenv").config();
-const session = require('express-session');
-const { webhook } = require('./src/controllers/stripeController');
+const session = require("express-session");
+const { webhook } = require("./src/controllers/stripeController");
 
 const connectDB = require("./src/config/database");
 
@@ -14,7 +14,11 @@ const PORT = process.env.PORT || 5000;
 connectDB();
 
 // Stripe webhook must be defined BEFORE any body parser (needs raw body)
-app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), webhook);
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  webhook
+);
 
 // Middleware
 app.use(
@@ -27,15 +31,20 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use(session({
-  secret: process.env.SESSION_SECRET, 
-  resave: false,
-  saveUninitialized: true,
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 1000 * 60 * 60 * 24 // 1 day
-  }
-}));
+// Serve static files from uploads directory
+app.use("/uploads", express.static("uploads"));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24, // 1 day
+    },
+  })
+);
 // ===========================================
 
 // Passport middleware
@@ -50,7 +59,7 @@ const staffRoutes = require("./src/routes/staffRoutes");
 const managementRoutes = require("./src/routes/managementRoutes");
 const adminRoutes = require("./src/routes/adminRoutes");
 const patientRoutes = require("./src/routes/patientRoutes");
-const stripeRoutes = require('./src/routes/stripeRoutes');
+const stripeRoutes = require("./src/routes/stripeRoutes");
 
 // Basic route
 app.get("/", (req, res) => {
@@ -68,7 +77,7 @@ app.use("/api/staff", staffRoutes);
 app.use("/api/management", managementRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/patient", patientRoutes);
-app.use('/api/stripe', stripeRoutes);
+app.use("/api/stripe", stripeRoutes);
 
 // 404 handler - must be last before error handler
 app.use((req, res) => {

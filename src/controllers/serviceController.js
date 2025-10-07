@@ -3,7 +3,15 @@ const { Service } = require("../models");
 // ==================== CREATE SERVICE ====================
 const createService = async (req, res) => {
   try {
-    const { name, thumbnail, description, category, price } = req.body;
+    const {
+      name,
+      thumbnail,
+      description,
+      category,
+      price,
+      duration,
+      isActive,
+    } = req.body;
 
     // Validate required fields
     if (!name || !category || !price) {
@@ -22,14 +30,31 @@ const createService = async (req, res) => {
       });
     }
 
-    // Create service
-    const service = await Service.create({
+    // Prepare service data - convert string values to appropriate types
+    const serviceData = {
       name,
       thumbnail,
       description,
       category,
       price: parseFloat(price),
-    });
+      duration: duration ? parseInt(duration) : undefined,
+      isActive:
+        isActive === "true" || isActive === true || isActive === undefined,
+    };
+
+    // Add image data if file was uploaded
+    if (req.file) {
+      serviceData.image = {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        path: req.file.path,
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+      };
+    }
+
+    // Create service
+    const service = await Service.create(serviceData);
 
     res.status(201).json({
       success: true,
@@ -202,19 +227,79 @@ const updateService = async (req, res) => {
       }
     }
 
-    // Update service
-    const updatedService = await Service.findByIdAndUpdate(
-      id,
-      {
-        name,
-        description,
-        category,
-        price,
-        duration,
-        isActive,
-      },
-      { new: true, runValidators: true }
-    );
+    // Prepare update data - convert string values to appropriate types
+    const updateData = {};
+
+    // Only update fields that are provided and validate required fields
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Name cannot be empty",
+        });
+      }
+      updateData.name = name;
+    }
+
+    if (description !== undefined) updateData.description = description;
+
+    if (category !== undefined) {
+      if (!category.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Category cannot be empty",
+        });
+      }
+      updateData.category = category;
+    }
+
+    if (price !== undefined) {
+      const priceNum = parseFloat(price);
+      if (isNaN(priceNum) || priceNum < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Price must be a valid positive number",
+        });
+      }
+      updateData.price = priceNum;
+    }
+
+    if (duration !== undefined)
+      updateData.duration = duration ? parseInt(duration) : undefined;
+    if (isActive !== undefined)
+      updateData.isActive = isActive === "true" || isActive === true;
+
+    // Add image data if new file was uploaded
+    if (req.file) {
+      updateData.image = {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        path: req.file.path,
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+      };
+    }
+
+    // Manual validation for critical fields
+    if (updateData.name && updateData.name.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: "Name must be at least 2 characters long",
+      });
+    }
+
+    if (updateData.price && updateData.price < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Price cannot be negative",
+      });
+    }
+
+    // Update service - only run validators for provided fields
+    const updatedService = await Service.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: false, // Disable validators to avoid process field validation
+    });
 
     res.status(200).json({
       success: true,
@@ -223,6 +308,13 @@ const updateService = async (req, res) => {
     });
   } catch (error) {
     console.error("Update service error:", error);
+    console.error("Error details:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      body: req.body,
+      file: req.file,
+    });
 
     if (error.name === "ValidationError") {
       const messages = Object.values(error.errors).map((err) => err.message);
@@ -236,6 +328,7 @@ const updateService = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error updating service",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };

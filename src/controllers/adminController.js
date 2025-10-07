@@ -218,7 +218,6 @@ const createStaffAccount = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error creating account",
-      ...(process.env.NODE_ENV === "development" && { error: error.message }),
     });
   }
 };

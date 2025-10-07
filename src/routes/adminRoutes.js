@@ -2,7 +2,13 @@ const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
 const serviceController = require("../controllers/serviceController");
+const {
+  uploadImage,
+  deleteImage,
+  getImage,
+} = require("../controllers/uploadController");
 const { authenticate, authorize } = require("../middlewares/auth");
+const { upload, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực cho tất cả routes admin
 router.use(authenticate);
@@ -40,10 +46,20 @@ router.get("/services/categories", serviceController.getServiceCategories);
 router.get("/services/:id", serviceController.getServiceById);
 
 // POST /api/admin/services - Tạo service mới
-router.post("/services", serviceController.createService);
+router.post(
+  "/services",
+  upload.single("image"),
+  handleUploadError,
+  serviceController.createService
+);
 
 // PUT /api/admin/services/:id - Cập nhật service
-router.put("/services/:id", serviceController.updateService);
+router.put(
+  "/services/:id",
+  upload.single("image"),
+  handleUploadError,
+  serviceController.updateService
+);
 
 // PATCH /api/admin/services/:id/toggle - Toggle trạng thái active/inactive
 router.patch("/services/:id/toggle", serviceController.toggleServiceStatus);
@@ -53,5 +69,21 @@ router.delete("/services/:id", serviceController.deleteService);
 
 // DELETE /api/admin/services/:id/hard - Hard delete service
 router.delete("/services/:id/hard", serviceController.hardDeleteService);
+
+// ==================== UPLOAD MANAGEMENT ====================
+
+// POST /api/admin/upload/image - Upload ảnh
+router.post(
+  "/upload/image",
+  upload.single("image"),
+  handleUploadError,
+  uploadImage
+);
+
+// DELETE /api/admin/upload/image/:filename - Xóa ảnh
+router.delete("/upload/image/:filename", deleteImage);
+
+// GET /api/admin/upload/image/:filename - Lấy ảnh
+router.get("/upload/image/:filename", getImage);
 
 module.exports = router;
