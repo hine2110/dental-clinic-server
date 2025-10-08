@@ -38,6 +38,12 @@ router.get("/receptionist/appointments",
   receptionistController.getAppointments
 );
 
+// Tạo link để bệnh nhân tự đổi lịch hẹn
+router.post("/receptionist/appointments/:id/generate-reschedule-link",
+  checkPermission("editPatientInfo"), // Giả định bạn có quyền này, hoặc tạo quyền mới 'manageAppointments'
+  receptionistController.generateRescheduleLink
+);
+
 // Chỉnh sửa hồ sơ cá nhân (receptionist)
 router.put("/receptionist/profile",
   checkPermission("editOwnProfile"),

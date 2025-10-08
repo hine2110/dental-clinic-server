@@ -12,9 +12,10 @@ const appointmentSchema = new mongoose.Schema(
     endTime: { type: String },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "cancelled"],
+      enum: ["pending", "confirmed", "cancelled", "completed"],
       default: "pending",
     },
+
     reasonForVisit: { type: String, trim: true },
     diagnosis: { type: String, trim: true },
     totalAmount: { type: Number, default: 0 },
@@ -23,6 +24,16 @@ const appointmentSchema = new mongoose.Schema(
       enum: ["pending", "paid", "service payment"],
       default: "pending",
     },
+        // lay token de doi lich hen
+    reschedule_token: {
+      type: String,
+      default: null
+    },
+
+  reschedule_token_expires_at: {
+    type: Date,
+    default: null
+  },
   },
   { timestamps: true }
 );

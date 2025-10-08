@@ -345,6 +345,43 @@ const editOwnProfile = async (req, res) => {
   }
 };
 
+// ham tao link doi lich hen
+const generateRescheduleLink = async (req, res) => {
+  try {
+    const { id: appointmentId } = req.params;
+    const appointment = await Appointment.findById(appointmentId);
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy lịch hẹn' });
+    }
+
+    if (appointment.status !== 'confirmed') {
+        return res.status(400).json({ success: false, message: 'Chỉ có thể đổi lịch cho các cuộc hẹn đã được xác nhận.' });
+    }
+
+    // Tạo một token ngẫu nhiên, an toàn
+    const token = crypto.randomBytes(32).toString('hex');
+    
+    // Đặt thời gian hết hạn cho token (1 giờ kể từ bây giờ)
+    const expiresAt = new Date(Date.now() + 3600 * 1000);
+
+    // Lưu token và thời gian hết hạn vào lịch hẹn
+    appointment.reschedule_token = token;
+    appointment.reschedule_token_expires_at = expiresAt;
+    await appointment.save();
+
+    // Trả về token để frontend tạo link hoàn chỉnh
+    res.status(200).json({ 
+        success: true,
+        message: 'Tạo link đổi lịch thành công. Vui lòng gửi link cho bệnh nhân.',
+        token: token 
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ khi tạo link đổi lịch", error: error.message });
+  }
+};
+
 
 
 
@@ -354,5 +391,6 @@ module.exports = {
   getAppointments,
   editOwnProfile,
   createInvoice,
-  viewPrescriptions
+  viewPrescriptions,
+  generateRescheduleLink
 };
