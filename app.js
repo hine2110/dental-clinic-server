@@ -61,6 +61,7 @@ const adminRoutes = require("./src/routes/adminRoutes");
 const patientRoutes = require("./src/routes/patientRoutes");
 const doctorRoutes = require("./src/routes/doctorRoutes");
 const stripeRoutes = require("./src/routes/stripeRoutes");
+const rescheduleRoutes = require('./src/routes/rescheduleRoutes'); 
 
 // Basic route
 app.get("/", (req, res) => {
@@ -80,6 +81,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/patient", patientRoutes);
 app.use("/api/doctor", doctorRoutes);
 app.use("/api/stripe", stripeRoutes);
+app.use('/api/reschedule', rescheduleRoutes);
 
 // 404 handler - must be last before error handler
 app.use((req, res) => {
