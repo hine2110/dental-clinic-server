@@ -25,25 +25,35 @@ const getAppointments = async (req, res) => {
     
     let query = {};
     
-    // Mặc định chỉ hiển thị appointments pending nếu không có filter status
     if (status) {
       query.status = status;
     } else {
-      // Nếu không có status filter, hiển thị tất cả (pending + confirmed)
-      query.status = { $in: [ "confirmed"] };
+      query.status = { $in: ["confirmed", "pending"] }; // Hiển thị cả pending và confirmed
     }
     
     if (date) {
       const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      query.appointmentDate = { $gte: startDate, $lt: endDate };
+      endDate.setHours(23, 59, 59, 999);
+      query.appointmentDate = { $gte: startDate, $lte: endDate };
     }
     if (doctorId) query.doctor = doctorId;
 
     const appointments = await Appointment.find(query)
-      .populate('doctor', 'doctorId user')
-      .populate('patient', 'user')
+      .populate({
+        path: 'doctor',
+        populate: {
+          path: 'user',
+          select: 'fullName'
+        }
+      })
+      // --- PHẦN POPULATE CHO BỆNH NHÂN ĐÃ ĐƯỢC SỬA LẠI ---
+      .populate({
+        path: 'patient',
+        select: 'basicInfo' // Chỉ cần lấy object basicInfo là đủ
+      })
+      // ----------------------------------------------------
       .sort({ appointmentDate: 1, startTime: 1 });
 
     res.status(200).json({

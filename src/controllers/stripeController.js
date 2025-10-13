@@ -66,8 +66,15 @@ async function webhook(req, res) {
             const session = event.data.object;
             const { doctorId, date, time, reasonForVisit, patientId } = session.metadata || {}; // patientId ở đây là User ID
 
+            // Map user -> Patient document to keep schema consistent
+            const patientDoc = await Patient.findOne({ user: patientId }).select('_id');
+            const patientRef = patientDoc ? patientDoc._id : null;
+
             const existingAppointment = await Appointment.findOne({
-                patient: patientId, doctor: doctorId, appointmentDate: new Date(date), startTime: time
+                patient: patientRef || patientId,
+                doctor: doctorId,
+                appointmentDate: new Date(date),
+                startTime: time
             });
 
             if (!existingAppointment) {
@@ -75,7 +82,8 @@ async function webhook(req, res) {
                 const newAppointment = await Appointment.create({
                     appointmentId,
                     doctor: doctorId,
-                    patient: patientId,
+                    // store Patient _id when available; fallback to User id (legacy)
+                    patient: patientRef || patientId,
                     appointmentDate: new Date(date),
                     startTime: time,
                     reasonForVisit,
