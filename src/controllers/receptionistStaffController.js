@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Doctor = require("../models/Doctor");
 const DoctorSchedule = require("../models/DoctorSchedule");
 
@@ -355,6 +356,46 @@ const editOwnProfile = async (req, res) => {
   }
 };
 
+const updateAppointmentStatus = async (req, res) => {
+  try {
+    const { id } = req.params; // Lấy ID của lịch hẹn từ URL
+    const { status } = req.body; // Lấy trạng thái mới từ body request
+
+    // Danh sách các trạng thái hợp lệ mà Lễ tân có thể cập nhật
+    const allowedStatusUpdates = ['checked-in', 'cancelled', 'no-show']; 
+    if (!status || !allowedStatusUpdates.includes(status)) {
+      return res.status(400).json({ success: false, message: "Trạng thái cập nhật không hợp lệ." });
+    }
+
+    const appointment = await Appointment.findById(id);
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy lịch hẹn." });
+    }
+    
+    // Kiểm tra để tránh cập nhật lại các lịch hẹn đã hoàn thành hoặc đã hủy
+    if (['completed', 'cancelled'].includes(appointment.status)) {
+        return res.status(409).json({ success: false, message: `Lịch hẹn đã ở trạng thái '${appointment.status}' và không thể thay đổi.` });
+    }
+
+    appointment.status = status;
+    await appointment.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật trạng thái lịch hẹn thành công!",
+      data: appointment
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi máy chủ khi cập nhật trạng thái",
+      error: error.message
+    });
+  }
+};
+
 // ham tao link doi lich hen
 const generateRescheduleLink = async (req, res) => {
   try {
@@ -402,5 +443,6 @@ module.exports = {
   editOwnProfile,
   createInvoice,
   viewPrescriptions,
+  updateAppointmentStatus,
   generateRescheduleLink
 };

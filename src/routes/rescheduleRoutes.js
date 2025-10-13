@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { verifyTokenAndGetSlots, confirmReschedule } = require('../controllers/rescheduleController');
+const { verifyTokenAndGetAppointment, updateAppointment, getDoctorAvailableSlots } = require('../controllers/rescheduleController');
 
-// Route công khai để bệnh nhân xác thực token và xem lịch trống
-router.get('/verify/:token', verifyTokenAndGetSlots);
+router.get('/verify', verifyTokenAndGetAppointment);
 
-// Route công khai để bệnh nhân xác nhận lịch hẹn mới
-router.post('/confirm', confirmReschedule);
+router.post('/update', updateAppointment);
+
+router.get('/available-slots', getDoctorAvailableSlots);
 
 module.exports = router;

@@ -37,7 +37,11 @@ router.get("/receptionist/appointments",
   checkPermission("viewPatientInfo"),
   receptionistController.getAppointments
 );
-
+// Cập nhật trạng thái lịch hẹn (Check-in, Hủy)
+router.patch("/receptionist/appointments/:id/status",
+  checkPermission("editPatientInfo"),
+  receptionistController.updateAppointmentStatus
+);
 // Tạo link để bệnh nhân tự đổi lịch hẹn
 router.post("/receptionist/appointments/:id/generate-reschedule-link",
   checkPermission("editPatientInfo"), // Giả định bạn có quyền này, hoặc tạo quyền mới 'manageAppointments'
