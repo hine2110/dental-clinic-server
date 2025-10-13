@@ -1,115 +1,162 @@
-const Appointment = require('../models/Appointment');
-const { getAvailableSlots } = require('../services/slotService');
-const Notification = require('../models/Notification');
-
+const Appointment = require("../models/Appointment");
+const DoctorSchedule = require("../models/DoctorSchedule");
+// Giả định bạn có hàm này từ patientAppointmentController hoặc một service chung
+const { getAvailableTimeSlots } = require('./patientAppointmentController'); 
 
 /**
- * @desc    Xác thực token đổi lịch và lấy các créneau giờ trống
- * @route   GET /api/reschedule/verify/:token
+ * @desc    Xác thực token đổi lịch và lấy thông tin lịch hẹn
+ * @route   GET /api/reschedule/verify?token=...
  * @access  Public
  */
-exports.verifyTokenAndGetSlots = async (req, res) => {
-    try {
-        const { token } = req.params;
-
-        // Tìm lịch hẹn có token hợp lệ (chưa hết hạn)
-        const appointment = await Appointment.findOne({
-            reschedule_token: token,
-            reschedule_token_expires_at: { $gt: new Date() }
-        }).populate('patient', 'user').populate('doctor', 'user');
-
-        if (!appointment) {
-            return res.status(400).json({ success: false, message: 'Link đổi lịch không hợp lệ hoặc đã hết hạn.' });
-        }
-
-        // Lấy các créneau giờ còn trống trong 7 ngày tới
-        const today = new Date();
-        const next7Days = new Date();
-        next7Days.setDate(today.getDate() + 7);
-
-        const availableSlots = await getAvailableSlots(appointment.doctor._id, today, next7Days);
-
-        res.status(200).json({
-            success: true,
-            message: 'Token hợp lệ.',
-            appointmentInfo: {
-                id: appointment._id,
-                patientName: appointment.patient.user.fullName,
-                doctorName: appointment.doctor.user.fullName,
-                currentDate: appointment.appointmentDate,
-                currentTime: appointment.startTime
-            },
-            availableSlots: availableSlots
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Lỗi máy chủ', error: error.message });
+const verifyTokenAndGetAppointment = async (req, res) => {
+  try {
+    // SỬA LẠI: Lấy token từ query parameter
+    const { token } = req.query;
+    if (!token) {
+      return res.status(400).json({ success: false, message: "Token không được cung cấp." });
     }
+
+    const appointment = await Appointment.findOne({
+      reschedule_token: token,
+      reschedule_token_expires_at: { $gt: new Date() }
+    }).populate({
+        path: 'doctor',
+        populate: { path: 'user', select: 'fullName' }
+    }).populate({
+        path: 'patient',
+        populate: { path: 'user', select: 'fullName' }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Link đổi lịch không hợp lệ hoặc đã hết hạn. Vui lòng liên hệ phòng khám." });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Token hợp lệ.",
+      data: appointment
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ khi xác thực token.", error: error.message });
+  }
 };
 
 /**
  * @desc    Bệnh nhân xác nhận đổi lịch hẹn mới
- * @route   POST /api/reschedule/confirm
+ * @route   POST /api/reschedule/update
  * @access  Public
  */
-exports.confirmReschedule = async (req, res) => {
+const updateAppointment = async (req, res) => {
+  try {
+    const { token, newDate, newTime } = req.body;
+
+    if (!token || !newDate || !newTime) {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin cần thiết (token, ngày mới, giờ mới)." });
+    }
+
+    const appointment = await Appointment.findOne({
+      reschedule_token: token,
+      reschedule_token_expires_at: { $gt: new Date() }
+    });
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Link đổi lịch không hợp lệ hoặc đã hết hạn." });
+    }
+
+    // Cập nhật thông tin
+    appointment.appointmentDate = new Date(newDate);
+    appointment.startTime = newTime;
+    
+    // Vô hiệu hóa token
+    appointment.reschedule_token = null;
+    appointment.reschedule_token_expires_at = null;
+
+    await appointment.save();
+    
+    // Gửi thông báo (tùy chọn)
+    // ... logic gửi thông báo ...
+
+    res.status(200).json({
+        success: true,
+        message: "Đổi lịch hẹn thành công!",
+        data: appointment
+    });
+
+  } catch (error) {
+     res.status(500).json({ success: false, message: "Lỗi máy chủ khi cập nhật lịch hẹn.", error: error.message });
+  }
+};
+
+const getDoctorAvailableSlots = async (req, res) => {
     try {
-        const { token, newDate, newStartTime, newEndTime } = req.body;
+        const { doctorId, date } = req.query;
 
-        if (!token || !newDate || !newStartTime || !newEndTime) {
-            return res.status(400).json({ success: false, message: 'Thiếu thông tin cần thiết để đổi lịch.' });
+        if (!doctorId || !date) {
+            return res.status(400).json({ success: false, message: "Thiếu thông tin bác sĩ hoặc ngày." });
         }
 
-        // Tìm lại lịch hẹn có token hợp lệ
-        const appointment = await Appointment.findOne({
-            reschedule_token: token,
-            reschedule_token_expires_at: { $gt: new Date() }
-        });
+        const targetDate = new Date(date);
+        const targetDateStart = new Date(targetDate.setHours(0, 0, 0, 0));
+        const targetDateEnd = new Date(targetDate.setHours(23, 59, 59, 999));
 
-        if (!appointment) {
-            return res.status(400).json({ success: false, message: 'Yêu cầu không hợp lệ hoặc đã hết hạn.' });
+        // Lấy tất cả lịch làm việc và lịch hẹn của bác sĩ trong ngày đó
+        const [schedules, appointments] = await Promise.all([
+            DoctorSchedule.find({
+                doctor: doctorId,
+                date: { $gte: targetDateStart, $lt: targetDateEnd },
+                isAvailable: true
+            }),
+            Appointment.find({
+                doctor: doctorId,
+                appointmentDate: { $gte: targetDateStart, $lt: targetDateEnd },
+                status: { $in: ["pending", "confirmed", "checked-in"] }
+            })
+        ]);
+
+        if (schedules.length === 0) {
+            return res.status(200).json({ success: true, data: [] }); // Bác sĩ không làm việc ngày này
         }
 
-        // TODO: Thêm bước kiểm tra lần cuối xem créneau giờ mới có bị người khác đặt mất chưa
+        const bookedTimes = new Set(appointments.map(app => app.startTime));
+        const availableSlots = [];
 
-        // Cập nhật lịch hẹn
-        appointment.appointmentDate = new Date(newDate);
-        appointment.startTime = newStartTime;
-        appointment.endTime = newEndTime;
+        const baseTimeSlots = [
+            "07:00", "08:00", "09:00", "10:00",
+            "13:00", "14:00", "15:00", "16:00"
+        ];
 
-        // VÔ CÙNG QUAN TRỌNG: Hủy token sau khi đã sử dụng
-        appointment.reschedule_token = null;
-        appointment.reschedule_token_expires_at = null;
-        
-        await appointment.save();
-
-        // (Tùy chọn) Gửi thông báo cho bệnh nhân và bác sĩ
-        try {
-            const patientUser = await require('../models/Patient').findById(appointment.patient).select('user');
-            const doctorUser = await require('../models/Doctor').findById(appointment.doctor).select('user');
-
-             await Notification.create([
-                {
-                    recipients: [patientUser.user],
-                    recipientModel: "User",
-                    title: "Lịch hẹn đã được đổi thành công",
-                    message: `Lịch hẹn của bạn với bác sĩ đã được đổi thành công sang ${newStartTime} ngày ${new Date(newDate).toLocaleDateString("vi-VN")}.`,
-                    type: "appointment_update",
-                },
-                {
-                    recipients: [doctorUser.user],
-                    recipientModel: "User",
-                    title: "Lịch hẹn của bệnh nhân đã thay đổi",
-                    message: `Lịch hẹn với bệnh nhân đã được đổi sang ${newStartTime} ngày ${new Date(newDate).toLocaleDateString("vi-VN")}.`,
-                    type: "appointment_update",
+        schedules.forEach(schedule => {
+            baseTimeSlots.forEach(time => {
+                // Kiểm tra xem giờ có nằm trong ca làm việc không
+                if (time >= schedule.startTime && time < schedule.endTime) {
+                    // Kiểm tra xem giờ đó đã bị đặt chưa
+                    if (!bookedTimes.has(time)) {
+                        availableSlots.push({
+                            time: time,
+                            displayTime: `${time.split(':')[0]}h`,
+                            isAvailable: true
+                        });
+                    }
                 }
-            ]);
-        } catch (notifyErr) {
-            console.error("Lỗi gửi thông báo đổi lịch:", notifyErr);
-        }
+            });
+        });
+        
+        // Loại bỏ các slot trùng lặp nếu có
+        const uniqueSlots = Array.from(new Set(availableSlots.map(s => s.time)))
+                               .map(time => availableSlots.find(s => s.time === time));
 
-        res.status(200).json({ success: true, message: 'Lịch hẹn của bạn đã được cập nhật thành công!' });
+
+        res.status(200).json({ success: true, data: uniqueSlots });
 
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Lỗi máy chủ', error: error.message });
+        res.status(500).json({ success: false, message: "Lỗi máy chủ", error: error.message });
     }
 };
+
+module.exports = {
+  verifyTokenAndGetAppointment,
+  updateAppointment,
+  getDoctorAvailableSlots
+};
+
