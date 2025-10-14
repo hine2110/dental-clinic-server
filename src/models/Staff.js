@@ -16,7 +16,7 @@ const staffSchema = new mongoose.Schema(
     staffType: {
       type: String,
       enum: ["receptionist", "storeKepper"],
-      default: "receptionist",
+      default: "receptionist"
     },
     profile: profileSchema,
     permissions: {
@@ -25,7 +25,7 @@ const staffSchema = new mongoose.Schema(
       viewPatientInfo: { type: Boolean, default: false }, // xem thông tin bệnh nhân
       editOwnProfile: { type: Boolean, default: false }, // chỉnh sửa hồ sơ cá nhân
       createInvoice: { type: Boolean, default: false }, // tạo hóa đơn
-
+      
       // Store keeper permissions
       viewStoreKepperSchedule: { type: Boolean, default: false }, // xem lịch làm việc
       viewPrescriptions: { type: Boolean, default: false }, // xem đơn thuốc bác sĩ kê
@@ -44,7 +44,7 @@ const staffSchema = new mongoose.Schema(
       reportEquipment: { type: Boolean, default: false }, // báo cáo thiết bị hỏng
 
       // Profile
-      editOwnProfileStore: { type: Boolean, default: false },
+      editOwnProfileStore: { type: Boolean, default: false }
     },
   },
   { timestamps: true }

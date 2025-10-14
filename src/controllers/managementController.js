@@ -556,6 +556,7 @@ const deleteDoctorSchedule = async (req, res) => {
 
 const createStaffSchedule = async (req, res) => {
   try {
+    console.log('createStaffSchedule called with data:', req.body);
     // Hỗ trợ tạo 1 hoặc nhiều lịch trong 1 request
     const schedulesData = Array.isArray(req.body) ? req.body : [req.body];
 
@@ -584,9 +585,14 @@ const createStaffSchedule = async (req, res) => {
           continue;
         }
 
-        // Staff fulltime phải là 07:00-17:00 và có nghỉ trưa 11:00-13:00
-        if (!isFulltimeShift(startTime, endTime) || !hasRequiredLunchBreak(startTime, endTime)) {
-          errors.push(`Lịch ${i + 1}: Staff phải làm fulltime 07:00-17:00 (nghỉ 11:00-13:00)`);
+        // Staff có thể làm fulltime hoặc part-time
+        const isFull = isFulltimeShift(startTime, endTime);
+        if (isFull && !hasRequiredLunchBreak(startTime, endTime)) {
+          errors.push(`Lịch ${i + 1}: Ca fulltime phải bao gồm nghỉ trưa 11:00-13:00`);
+          continue;
+        }
+        if (!isFull && !isFourHourShift(startTime, endTime)) {
+          errors.push(`Lịch ${i + 1}: Ca part-time phải là 4 tiếng`);
           continue;
         }
 
@@ -666,6 +672,7 @@ const createStaffSchedule = async (req, res) => {
 
     return res.status(201).json({ success: true, message, data: results.length === 1 ? results[0] : results, count: results.length });
   } catch (error) {
+    console.error('Error in createStaffSchedule:', error);
     return res.status(500).json({ success: false, message: "Lỗi tạo lịch staff", error: error.message });
   }
 };
@@ -838,7 +845,193 @@ const getRevenue = async (req, res) => {
   }
 };
 
+// Get all doctor schedules
+const getDoctorSchedules = async (req, res) => {
+  try {
+    const { startDate, endDate, locationId } = req.query;
+    
+    let query = {};
+    
+    if (startDate && endDate) {
+      query.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+    
+    if (locationId) {
+      query.location = locationId;
+    }
+
+    const schedules = await DoctorSchedule.find(query)
+      .populate('doctor', 'doctorId user specializations')
+      .populate({
+        path: 'doctor',
+        populate: {
+          path: 'user',
+          select: 'fullName email phone'
+        }
+      })
+      .populate('location', 'name address')
+      .populate({
+        path: 'createdBy',
+        select: 'user staffType',
+        populate: {
+          path: 'user',
+          select: 'fullName email role'
+        }
+      })
+      .sort({ date: 1, startTime: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách lịch bác sĩ thành công",
+      data: schedules,
+      count: schedules.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách lịch bác sĩ",
+      error: error.message
+    });
+  }
+};
+
+// Get all staff schedules
+const getStaffSchedules = async (req, res) => {
+  try {
+    const { startDate, endDate, locationId, staffType } = req.query;
+    
+    let query = {};
+    
+    if (startDate && endDate) {
+      query.date = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+    
+    if (locationId) {
+      query.location = locationId;
+    }
+
+    // If staffType is specified, filter by staff type
+    if (staffType) {
+      const staffQuery = { staffType };
+      const staffMembers = await Staff.find(staffQuery).select('_id');
+      query.staff = { $in: staffMembers.map(s => s._id) };
+    }
+
+    const schedules = await StaffSchedule.find(query)
+      .populate('staff', 'staffType user')
+      .populate({
+        path: 'staff',
+        populate: {
+          path: 'user',
+          select: 'fullName email phone'
+        }
+      })
+      .populate('location', 'name address')
+      .populate({
+        path: 'createdBy',
+        select: 'user staffType',
+        populate: {
+          path: 'user',
+          select: 'fullName email role'
+        }
+      })
+      .sort({ date: 1, startTime: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách lịch nhân viên thành công",
+      data: schedules,
+      count: schedules.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách lịch nhân viên",
+      error: error.message
+    });
+  }
+};
+
+// Get all doctors
+const getAllDoctors = async (req, res) => {
+  try {
+    const doctors = await Doctor.find()
+      .populate('user', 'fullName email phone')
+      .select('doctorId user specializations isActive')
+      .sort({ 'user.fullName': 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách bác sĩ thành công",
+      data: doctors,
+      count: doctors.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách bác sĩ",
+      error: error.message
+    });
+  }
+};
+
+// Get all staff
+const getAllStaff = async (req, res) => {
+  try {
+    const staff = await Staff.find()
+      .populate('user', 'fullName email phone')
+      .select('staffId user staffType isActive')
+      .sort({ 'user.fullName': 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách nhân viên thành công",
+      data: staff,
+      count: staff.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách nhân viên",
+      error: error.message
+    });
+  }
+};
+
+// Get all locations
+const getAllLocations = async (req, res) => {
+  try {
+    const locations = await Location.find()
+      .select('name address phone isActive')
+      .sort({ name: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách cơ sở thành công",
+      data: locations,
+      count: locations.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách cơ sở",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
+  getAllDoctors,
+  getAllStaff,
+  getAllLocations,
+  getDoctorSchedules,
+  getStaffSchedules,
   createDoctorSchedule,
   updateDoctorSchedule,
   deleteDoctorSchedule,

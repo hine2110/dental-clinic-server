@@ -8,6 +8,22 @@ const { checkManagementRole, checkManagementPermission } = require("../middlewar
 router.use(authenticate);
 router.use(checkManagementRole);
 
+// Get all doctors and staff
+router.get("/doctors",
+  checkManagementPermission("viewDoctorProfile"),
+  managementController.getAllDoctors
+);
+
+router.get("/staff",
+  checkManagementPermission("viewStaffProfile"),
+  managementController.getAllStaff
+);
+
+router.get("/locations",
+  checkManagementPermission("viewStaffProfile"),
+  managementController.getAllLocations
+);
+
 // Profiles
 router.get("/doctors/:doctorId/profile",
   checkManagementPermission("viewDoctorProfile"),
@@ -20,6 +36,10 @@ router.get("/staff/:staffId/profile",
 );
 
 // Doctor schedules CRUD with enforcement
+router.get("/schedules/doctors",
+  checkManagementPermission("viewDoctorSchedule"),
+  managementController.getDoctorSchedules
+);
 router.post("/schedules/doctors",
   checkManagementPermission("createDoctorSchedule"),
   managementController.createDoctorSchedule
@@ -34,6 +54,10 @@ router.delete("/schedules/doctors/:scheduleId",
 );
 
 // Staff schedules CRUD with enforcement (receptionist/storeKepper fulltime)
+router.get("/schedules/staff",
+  checkManagementPermission("viewStaffSchedule"),
+  managementController.getStaffSchedules
+);
 // Explicit endpoints per staff type
 router.post("/schedules/staff/receptionist",
   checkManagementPermission("createReceptionistSchedule"),
