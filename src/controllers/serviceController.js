@@ -5,7 +5,6 @@ const createService = async (req, res) => {
   try {
     const {
       name,
-      thumbnail,
       description,
       category,
       price,
@@ -34,7 +33,6 @@ const createService = async (req, res) => {
     // Prepare service data - convert string values to appropriate types
     const serviceData = {
       name,
-      thumbnail,
       description,
       category,
       price: parseFloat(price),
@@ -63,6 +61,7 @@ const createService = async (req, res) => {
 
     // Add image data if file was uploaded
     if (req.file) {
+      // Lưu thông tin chi tiết vào object 'image'
       serviceData.image = {
         filename: req.file.filename,
         originalName: req.file.originalname,
@@ -70,8 +69,9 @@ const createService = async (req, res) => {
         size: req.file.size,
         mimetype: req.file.mimetype,
       };
+      // TẠO VÀ LƯU URL ĐẦY ĐỦ VÀO TRƯỜNG 'thumbnail'
+      serviceData.thumbnail = `http://localhost:5000/uploads/${req.file.filename}`;
     }
-
     // Create service
     const service = await Service.create(serviceData);
 
@@ -316,6 +316,8 @@ const updateService = async (req, res) => {
         size: req.file.size,
         mimetype: req.file.mimetype,
       };
+      // TẠO VÀ LƯU URL ĐẦY ĐỦ VÀO TRƯỜNG 'thumbnail'
+      updateData.thumbnail = `http://localhost:5000/uploads/${req.file.filename}`;
     }
 
     // Manual validation for critical fields

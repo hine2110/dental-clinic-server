@@ -22,16 +22,21 @@ const Invoice = require("../models/Invoice");
 // 5. Xem danh sách lịch hẹn 
 const getAppointments = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 10;
+    const skip = (page - 1) * limit;
     const { status, date, doctorId } = req.query;
-    
     let query = {};
-    
     if (status) {
       query.status = status;
-    } else {
-      query.status = { $in: ["confirmed", "pending"] }; // Hiển thị cả pending và confirmed
+    } 
+    else {
+      query.status = { $in: ['pending-payment', 'confirmed', 'rescheduled'] };
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      query.appointmentDate = { $gte: today };
     }
-    
+  
     if (date) {
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
@@ -40,27 +45,32 @@ const getAppointments = async (req, res) => {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     }
     if (doctorId) query.doctor = doctorId;
-
-    const appointments = await Appointment.find(query)
-      .populate({
-        path: 'doctor',
-        populate: {
-          path: 'user',
-          select: 'fullName'
-        }
-      })
-      // --- PHẦN POPULATE CHO BỆNH NHÂN ĐÃ ĐƯỢC SỬA LẠI ---
-      .populate({
-        path: 'patient',
-        select: 'basicInfo' // Chỉ cần lấy object basicInfo là đủ
-      })
-      // ----------------------------------------------------
-      .sort({ appointmentDate: 1, startTime: 1 });
-
+    const [appointments, totalAppointments] = await Promise.all([
+      Appointment.find(query)
+        .populate({
+          path: 'doctor',
+          populate: { path: 'user', select: 'fullName' }
+        })
+        .populate({
+          path: 'patient',
+          select: 'basicInfo'
+        })
+        .sort({ appointmentDate: 1, startTime: 1 })
+        .skip(skip) 
+        .limit(limit), 
+      Appointment.countDocuments(query)
+    ]);
+    
+    const totalPages = Math.ceil(totalAppointments / limit);
     res.status(200).json({
       success: true,
       message: "Lấy danh sách lịch hẹn thành công",
-      data: appointments
+      data: appointments,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalAppointments: totalAppointments
+      }
     });
   } catch (error) {
     res.status(500).json({
