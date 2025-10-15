@@ -27,7 +27,6 @@ const getAppointments = async (req, res) => {
     const skip = (page - 1) * limit;
     const { status, date, doctorId } = req.query;
     let query = {};
-
     if (status) {
       query.status = status;
     } 
@@ -36,15 +35,16 @@ const getAppointments = async (req, res) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       query.appointmentDate = { $gte: today };
- 
+    }
+  
     if (date) {
       const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      query.appointmentDate = { $gte: startDate, $lt: endDate };
+      endDate.setHours(23, 59, 59, 999);
+      query.appointmentDate = { $gte: startDate, $lte: endDate };
     }
     if (doctorId) query.doctor = doctorId;
-      
     const [appointments, totalAppointments] = await Promise.all([
       Appointment.find(query)
         .populate({
