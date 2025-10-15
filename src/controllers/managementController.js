@@ -292,6 +292,8 @@ const createDoctorSchedule = async (req, res) => {
           continue;
         }
 
+        const utcDate = new Date(date);
+
         // Create then check weekly composition including new shift
         console.log('Creating schedule with data:', {
           doctor: doctorId,
@@ -306,7 +308,7 @@ const createDoctorSchedule = async (req, res) => {
         const schedule = new DoctorSchedule({
           doctor: doctorId,
           location: locationId,
-          date: new Date(date),
+          date: utcDate,
           startTime,
           endTime,
           isAvailable: true,
@@ -372,7 +374,7 @@ const createDoctorSchedule = async (req, res) => {
             recipients: [doctorId],
             recipientModel: "Doctor",
             title: "Lịch làm việc mới",
-            message: `Bạn được xếp lịch ngày ${new Date(date).toLocaleDateString("vi-VN")} từ ${startTime} đến ${endTime} tại cơ sở ${location.name}`,
+            message: `Bạn được xếp lịch ngày ${utcDate.toLocaleDateString("vi-VN")} từ ${startTime} đến ${endTime} tại cơ sở ${location.name}`,
             type: "doctor_schedule_assigned",
             relatedData: {
               scheduleId: populated._id,
@@ -397,8 +399,8 @@ const createDoctorSchedule = async (req, res) => {
     let warnings = [];
     if (results.length > 0 && errors.length === 0) {
       const firstSchedule = results[0];
-      const dailyCheck = await checkDoctorDailyComposition(firstSchedule.location, new Date(firstSchedule.date));
-      const weeklyCheck = await checkDoctorWeeklyCompositionComplete(firstSchedule.location, new Date(firstSchedule.date));
+      const dailyCheck = await checkDoctorDailyComposition(firstSchedule.location, firstSchedule.date);
+      const weeklyCheck = await checkDoctorWeeklyCompositionComplete(firstSchedule.location, firstSchedule.date);
       
       if (!dailyCheck.isComplete) {
         warnings = warnings.concat(dailyCheck.warnings);
@@ -451,7 +453,7 @@ const updateDoctorSchedule = async (req, res) => {
     const schedule = await DoctorSchedule.findById(scheduleId);
     if (!schedule) return res.status(404).json({ success: false, message: "Không tìm thấy lịch" });
 
-    const newDate = date ? new Date(date) : schedule.date;
+    const newDate = date ? new Date(`${date}T00:00:00.000Z`): schedule.date;
     const newStart = startTime || schedule.startTime;
     const newEnd = endTime || schedule.endTime;
 
@@ -553,12 +555,10 @@ const deleteDoctorSchedule = async (req, res) => {
     res.status(500).json({ success: false, message: "Lỗi xóa lịch bác sĩ", error: error.message });
   }
 };
-
+ 
 const createStaffSchedule = async (req, res) => {
   try {
-    // Hỗ trợ tạo 1 hoặc nhiều lịch trong 1 request
     const schedulesData = Array.isArray(req.body) ? req.body : [req.body];
-
     const results = [];
     const errors = [];
 
@@ -566,6 +566,12 @@ const createStaffSchedule = async (req, res) => {
       const { staffId, locationId, date, startTime, endTime, notes } = schedulesData[i] || {};
 
       try {
+        // --- VALIDATION ĐẦU VÀO ---
+        if (!staffId || !locationId || !date || !startTime || !endTime) {
+            errors.push(`Lịch ${i + 1}: Thiếu thông tin bắt buộc (nhân viên, cơ sở, ngày, giờ).`);
+            continue;
+        }
+
         const staff = await Staff.findById(staffId);
         if (!staff) {
           errors.push(`Lịch ${i + 1}: Không tìm thấy nhân viên với ID ${staffId}`);
@@ -577,23 +583,44 @@ const createStaffSchedule = async (req, res) => {
           errors.push(`Lịch ${i + 1}: Không tìm thấy cơ sở với ID ${locationId}`);
           continue;
         }
-
-        // Chỉ cho xếp lịch cho receptionist hoặc storeKepper
+        
+  
         if (!['receptionist', 'storeKepper'].includes(staff.staffType)) {
-          errors.push(`Lịch ${i + 1}: Chỉ xếp lịch cho receptionist hoặc storeKepper (nhân viên hiện tại: ${staff.staffType || 'không xác định'})`);
+          errors.push(`Lịch ${i + 1}: Chỉ xếp lịch cho receptionist hoặc storeKepper.`);
+          continue;
+        }
+        const isFull = isFulltimeShift(startTime, endTime);
+        if (isFull && !hasRequiredLunchBreak(startTime, endTime)) {
+          errors.push(`Lịch ${i + 1}: Ca fulltime phải bao gồm nghỉ trưa 11:00-13:00`);
+          continue;
+        }
+        if (!isFull && !isFourHourShift(startTime, endTime)) {
+          errors.push(`Lịch ${i + 1}: Ca part-time phải là 4 tiếng`);
           continue;
         }
 
-        // Staff fulltime phải là 07:00-17:00 và có nghỉ trưa 11:00-13:00
-        if (!isFulltimeShift(startTime, endTime) || !hasRequiredLunchBreak(startTime, endTime)) {
-          errors.push(`Lịch ${i + 1}: Staff phải làm fulltime 07:00-17:00 (nghỉ 11:00-13:00)`);
-          continue;
-        }
+        // FIX: SỬA LỖI MÚI GIỜ KHI TẠO NGÀY
+        const utcDate = new Date(`${date}T00:00:00.000Z`);
 
+        const conflictQuery = {
+          staff: staffId,
+          date: utcDate,
+          // Điều kiện để tìm ra bất kỳ lịch nào có thời gian chồng chéo
+          startTime: { $lt: endTime }, // Bắt đầu của lịch cũ < Kết thúc của lịch mới
+          endTime: { $gt: startTime }   // Kết thúc của lịch cũ > Bắt đầu của lịch mới
+        };
+
+        const conflictingSchedule = await StaffSchedule.findOne(conflictQuery);
+
+        if (conflictingSchedule) {
+          errors.push(`Lịch ${i + 1}: Xung đột lịch! Nhân viên đã có lịch từ ${conflictingSchedule.startTime} đến ${conflictingSchedule.endTime} trong ngày này.`);
+          continue; // Bỏ qua và xử lý lịch tiếp theo
+        }
+        
         const schedule = new StaffSchedule({
           staff: staff._id,
           location: locationId,
-          date: new Date(date),
+          date: utcDate, // <-- SỬ DỤNG NGÀY UTC
           startTime,
           endTime,
           isAvailable: true,
@@ -601,28 +628,31 @@ const createStaffSchedule = async (req, res) => {
           createdBy: req.management._id
         });
 
-        try {
-          await schedule.save();
-        } catch (saveError) {
-          errors.push(`Lịch ${i + 1}: Lỗi lưu database - ${saveError.message}`);
-          continue;
-        }
+        await schedule.save();
 
         // Kiểm tra ràng buộc tuần cho staff (ít nhất 1 receptionist fulltime và 1 storeKepper fulltime)
-        const weekly = await validateStaffWeeklyComposition(
-          locationId,
-          new Date(date),
-          { allowPartial: true, currentStaffType: staff.staffType }
-        );
-        if (!weekly.isValid) {
-          await StaffSchedule.findByIdAndDelete(schedule._id);
-          errors.push(`Lịch ${i + 1}: Vi phạm ràng buộc staff trong tuần - ${weekly.errors.join(', ')}`);
-          continue;
+        // Chỉ kiểm tra nếu đây là ca fulltime, part-time không cần kiểm tra ràng buộc tuần
+        if (isFull) {
+          const weekly = await validateStaffWeeklyComposition(
+            locationId,
+            new Date(date),
+            { allowPartial: true, currentStaffType: staff.staffType }
+          );
+          if (!weekly.isValid) {
+            await StaffSchedule.findByIdAndDelete(schedule._id);
+            errors.push(`Lịch ${i + 1}: Vi phạm ràng buộc staff trong tuần - ${weekly.errors.join(', ')}`);
+            continue;
+          }
         }
 
         const populated = await StaffSchedule.findById(schedule._id)
-          .populate("staff", "staffType user")
-          .populate("location", "name address");
+          .populate({
+            path: 'staff',
+            populate: { path: 'user', select: 'fullName' }
+          })
+          
+        results.push(populated);
+        
 
         // Notify assigned staff
         try {
@@ -666,6 +696,7 @@ const createStaffSchedule = async (req, res) => {
 
     return res.status(201).json({ success: true, message, data: results.length === 1 ? results[0] : results, count: results.length });
   } catch (error) {
+    console.error('Error in createStaffSchedule:', error);
     return res.status(500).json({ success: false, message: "Lỗi tạo lịch staff", error: error.message });
   }
 };
@@ -677,7 +708,7 @@ const updateStaffSchedule = async (req, res) => {
     const schedule = await StaffSchedule.findById(scheduleId).populate("staff", "staffType");
     if (!schedule) return res.status(404).json({ success: false, message: "Không tìm thấy lịch" });
 
-    const newDate = date ? new Date(date) : schedule.date;
+    const newDate = date ? new Date(`${date}T00:00:00.000Z`): schedule.date;
     const newStart = startTime || schedule.startTime;
     const newEnd = endTime || schedule.endTime;
 
@@ -691,9 +722,13 @@ const updateStaffSchedule = async (req, res) => {
     if (notes !== undefined) schedule.notes = notes;
     await schedule.save();
 
-    const weekly = await validateStaffWeeklyComposition(schedule.location, newDate);
-    if (!weekly.isValid) {
-      return res.status(400).json({ success: false, message: "Vi phạm ràng buộc staff trong tuần", errors: weekly.errors });
+    // Chỉ kiểm tra ràng buộc tuần nếu đây là ca fulltime
+    const isFull = isFulltimeShift(newStart, newEnd);
+    if (isFull) {
+      const weekly = await validateStaffWeeklyComposition(schedule.location, newDate);
+      if (!weekly.isValid) {
+        return res.status(400).json({ success: false, message: "Vi phạm ràng buộc staff trong tuần", errors: weekly.errors });
+      }
     }
 
     const populated = await StaffSchedule.findById(schedule._id)
@@ -739,9 +774,13 @@ const deleteStaffSchedule = async (req, res) => {
     const end = schedule.endTime;
     await schedule.deleteOne();
 
-    const weekly = await validateStaffWeeklyComposition(locationId, date);
-    if (!weekly.isValid) {
-      return res.status(400).json({ success: false, message: "Xóa lịch làm vi phạm ràng buộc staff trong tuần", errors: weekly.errors });
+    // Chỉ kiểm tra ràng buộc tuần nếu đây là ca fulltime
+    const isFull = isFulltimeShift(start, end);
+    if (isFull) {
+      const weekly = await validateStaffWeeklyComposition(locationId, date);
+      if (!weekly.isValid) {
+        return res.status(400).json({ success: false, message: "Xóa lịch làm vi phạm ràng buộc staff trong tuần", errors: weekly.errors });
+      }
     }
 
     // Notify staff about deletion
@@ -838,7 +877,196 @@ const getRevenue = async (req, res) => {
   }
 };
 
+// Get all doctor schedules
+const getDoctorSchedules = async (req, res) => {
+  try {
+    const { startDate, endDate, locationId } = req.query;
+    
+    let query = {};
+    
+    if (startDate && endDate) {
+      // FIX 1: Ép ngày thành UTC để tránh lỗi múi giờ
+      query.date = {
+        $gte: new Date(`${startDate}T00:00:00.000Z`),
+        $lte: new Date(`${endDate}T23:59:59.999Z`) // Lấy đến cuối ngày
+      };
+    }
+    
+    if (locationId) {
+      query.location = locationId;
+    }
+
+    const schedules = await DoctorSchedule.find(query)
+      // FIX 2: Gộp hai lần populate 'doctor' thành một cho gọn
+      .populate({
+        path: 'doctor',
+        select: 'doctorId user specializations', // Thêm select ở đây
+        populate: {
+          path: 'user',
+          select: 'fullName email phone'
+        }
+      })
+      .populate('location', 'name address')
+      .populate({
+        path: 'createdBy',
+        select: 'user staffType',
+        populate: {
+          path: 'user',
+          select: 'fullName email role'
+        }
+      })
+      .sort({ date: 1, startTime: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách lịch bác sĩ thành công",
+      data: schedules,
+      count: schedules.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách lịch bác sĩ",
+      error: error.message
+    });
+  }
+};
+
+// Get all staff schedules
+const getStaffSchedules = async (req, res) => {
+  try {
+    const { startDate, endDate, locationId, staffType } = req.query;
+    
+    let query = {};
+    
+    // Xử lý múi giờ chính xác
+    if (startDate && endDate) {
+      query.date = {
+        $gte: new Date(`${startDate}T00:00:00.000Z`),
+        $lte: new Date(`${endDate}T23:59:59.999Z`)
+      };
+    }
+    
+    if (locationId) {
+      query.location = locationId;
+    }
+
+    // Nếu có staffType, chúng ta sẽ lọc trong 2 bước (an toàn và dễ hiểu hơn)
+    if (staffType) {
+      // Bước 1: Tìm tất cả staff IDs có staffType tương ứng
+      const staffIds = await Staff.find({ staffType: staffType }).select('_id');
+      // Bước 2: Dùng các IDs đó để lọc trong bảng schedule
+      query.staff = { $in: staffIds.map(s => s._id) };
+    }
+
+    const schedules = await StaffSchedule.find(query)
+      .populate({
+        path: 'staff',
+        select: 'staffType user', // Chọn các trường cần thiết
+        populate: {
+          path: 'user',
+          select: 'fullName email phone' // Lấy thông tin user
+        }
+      })
+      .populate('location', 'name address')
+      .sort({ date: 1, startTime: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách lịch nhân viên thành công",
+      data: schedules,
+      count: schedules.length
+    });
+  } catch (error) {
+    // Thêm console.log để dễ dàng xem lỗi trên terminal của server
+    console.error("CRASH IN getStaffSchedules:", error); 
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách lịch nhân viên",
+      error: error.message
+    });
+  }
+};
+
+// Get all doctors
+const getAllDoctors = async (req, res) => {
+  try {
+    console.log('getAllDoctors called');
+    const doctors = await Doctor.find()
+      .populate('user', 'fullName email phone')
+      .select('doctorId user specializations isActive')
+      .sort({ 'user.fullName': 1 });
+
+    console.log('Found doctors:', doctors.length);
+    console.log('Doctors data:', doctors);
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách bác sĩ thành công",
+      data: doctors,
+      count: doctors.length
+    });
+  } catch (error) {
+    console.error('Error in getAllDoctors:', error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách bác sĩ",
+      error: error.message
+    });
+  }
+};
+
+// Get all staff
+const getAllStaff = async (req, res) => {
+  try {
+    const staff = await Staff.find()
+      .populate('user', 'fullName email phone')
+      .select('staffId user staffType isActive')
+      .sort({ 'user.fullName': 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách nhân viên thành công",
+      data: staff,
+      count: staff.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách nhân viên",
+      error: error.message
+    });
+  }
+};
+
+// Get all locations
+const getAllLocations = async (req, res) => {
+  try {
+    const locations = await Location.find()
+      .select('name address phone isActive')
+      .sort({ name: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách cơ sở thành công",
+      data: locations,
+      count: locations.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách cơ sở",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
+  getAllDoctors,
+  getAllStaff,
+  getAllLocations,
+  getDoctorSchedules,
+  getStaffSchedules,
   createDoctorSchedule,
   updateDoctorSchedule,
   deleteDoctorSchedule,

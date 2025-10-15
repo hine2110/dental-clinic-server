@@ -26,35 +26,25 @@ const getAppointments = async (req, res) => {
     
     let query = {};
     
+    // Mặc định chỉ hiển thị appointments pending nếu không có filter status
     if (status) {
       query.status = status;
     } else {
-      query.status = { $in: ["confirmed", "pending"] }; // Hiển thị cả pending và confirmed
+      // Nếu không có status filter, hiển thị tất cả (pending + confirmed)
+      query.status = { $in: [ "confirmed"] };
     }
     
     if (date) {
       const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
-      query.appointmentDate = { $gte: startDate, $lte: endDate };
+      endDate.setDate(endDate.getDate() + 1);
+      query.appointmentDate = { $gte: startDate, $lt: endDate };
     }
     if (doctorId) query.doctor = doctorId;
 
     const appointments = await Appointment.find(query)
-      .populate({
-        path: 'doctor',
-        populate: {
-          path: 'user',
-          select: 'fullName'
-        }
-      })
-      // --- PHẦN POPULATE CHO BỆNH NHÂN ĐÃ ĐƯỢC SỬA LẠI ---
-      .populate({
-        path: 'patient',
-        select: 'basicInfo' // Chỉ cần lấy object basicInfo là đủ
-      })
-      // ----------------------------------------------------
+      .populate('doctor', 'doctorId user')
+      .populate('patient', 'user')
       .sort({ appointmentDate: 1, startTime: 1 });
 
     res.status(200).json({
@@ -218,8 +208,6 @@ const createInvoice = async (req, res) => {
     prescription.status = includeMedicines ? 'completed' : 'invoiced'; // 'completed' nếu xuất thuốc, 'invoiced' nếu chỉ HĐ dịch vụ
     await prescription.save();
 
-    // 7. Gửi thông báo (tùy chọn)
-    // ... (logic gửi notification có thể giữ nguyên ở đây) ...
 
     // 8. Trả về kết quả thành công
     res.status(201).json({
@@ -356,6 +344,7 @@ const editOwnProfile = async (req, res) => {
   }
 };
 
+
 const updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params; // Lấy ID của lịch hẹn từ URL
@@ -432,6 +421,7 @@ const generateRescheduleLink = async (req, res) => {
     res.status(500).json({ success: false, message: "Lỗi máy chủ khi tạo link đổi lịch", error: error.message });
   }
 };
+
 
 
 
