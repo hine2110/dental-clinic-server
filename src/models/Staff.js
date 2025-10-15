@@ -25,7 +25,9 @@ const staffSchema = new mongoose.Schema(
       viewPatientInfo: { type: Boolean, default: false }, // xem thông tin bệnh nhân
       editOwnProfile: { type: Boolean, default: false }, // chỉnh sửa hồ sơ cá nhân
       createInvoice: { type: Boolean, default: false }, // tạo hóa đơn
-      
+
+      editPatientInfo: { type: Boolean, default: false }, 
+
       // Store keeper permissions
       viewStoreKepperSchedule: { type: Boolean, default: false }, // xem lịch làm việc
       viewPrescriptions: { type: Boolean, default: false }, // xem đơn thuốc bác sĩ kê

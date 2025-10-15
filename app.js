@@ -4,6 +4,8 @@ const passport = require("passport");
 require("dotenv").config();
 const session = require("express-session");
 const { webhook } = require("./src/controllers/stripeController");
+const cron = require('node-cron');
+const taskController = require('./src/controllers/taskController');
 
 const connectDB = require("./src/config/database");
 
@@ -100,6 +102,17 @@ app.use((error, req, res, next) => {
     ...(process.env.NODE_ENV === "development" && { stack: error.stack }),
   });
 });
+
+// ==================== SCHEDULED TASKS (CRON JOB) ====================
+// Tác vụ này sẽ chạy sau mỗi phút để tự động cập nhật lịch hẹn trễ.
+// Cấu hình: '* * * * *' -> Chạy mỗi phút.
+// Để chạy mỗi 5 phút, bạn có thể dùng: '*/5 * * * *'
+cron.schedule('* * * * *', () => {
+  console.log('--- [CRON] Triggering scheduled task: updateOverdueAppointments ---');
+  taskController.updateOverdueAppointments();
+});
+console.log('✅ Cron job for updating overdue appointments has been scheduled to run every minute.');
+// ====================================================================
 
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
