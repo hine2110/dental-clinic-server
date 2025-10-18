@@ -7,20 +7,13 @@ const { formatInTimeZone } = require('date-fns-tz');
  */
 const updateOverdueAppointments = async () => {
     try {
-        // Lấy thời gian hiện tại ở múi giờ Việt Nam
         const nowInVietnam = new Date(formatInTimeZone(new Date(), 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd HH:mm:ss'));
-        
         console.log(`[Task Runner] Running job at: ${nowInVietnam.toISOString()}`);
-
-        // Tính toán thời gian giới hạn (hiện tại - 15 phút)
         const fifteenMinutesAgo = new Date(nowInVietnam.getTime() - 15 * 60 * 1000);
-
-        // Tìm các lịch hẹn cần cập nhật
+        const targetDate = fifteenMinutesAgo.toISOString().split('T')[0];
         const overdueAppointments = await Appointment.find({
-            // Trạng thái phải là pending hoặc confirmed
             status: { $in: ['pending', 'confirmed'] },
-            // Ngày hẹn phải là trong quá khứ hoặc hôm nay
-            appointmentDate: { $lte: fifteenMinutesAgo.toISOString().split('T')[0] } 
+            appointmentDate: { $lte: targetDate } 
         });
         
         if (overdueAppointments.length === 0) {
@@ -30,14 +23,22 @@ const updateOverdueAppointments = async () => {
 
         let updatedCount = 0;
         for (const app of overdueAppointments) {
+            if (!app.startTime || !app.startTime.includes(':')) {
+                console.warn(`[Task Runner] Skipping appointment ${app.appointmentId || app._id} due to invalid or missing startTime.`);
+                continue;
+            }
+
             const [hour, minute] = app.startTime.split(':');
             const appointmentDateTime = new Date(app.appointmentDate);
             appointmentDateTime.setHours(hour, minute, 0, 0);
 
             // Nếu giờ hẹn đã qua 15 phút so với hiện tại
             if (appointmentDateTime < fifteenMinutesAgo) {
-                app.status = 'no-show';
-                await app.save();
+                await Appointment.updateOne(
+                    { _id: app._id },
+                    { $set: { status: 'no-show' } }
+                );
+
                 updatedCount++;
                 console.log(`[Task Runner] Appointment ${app.appointmentId} updated to no-show.`);
             }
