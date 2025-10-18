@@ -15,12 +15,21 @@ const login = async (req, res) => {
     }
 
     const user = await User.findOne({ email }).select("+password");
+    console.log("🔍 User found:", !!user);
     if (!user) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
       });
     }
+    
+    console.log("🔍 User details:", {
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      passwordExists: !!user.password,
+      passwordLength: user.password?.length
+    });
 
     if (!user.isActive) {
       return res.status(401).json({
@@ -29,13 +38,22 @@ const login = async (req, res) => {
       });
     }
 
+    console.log("🔐 Password comparison:", {
+      providedPassword: password,
+      storedPasswordLength: user.password?.length,
+      passwordMatch: await bcrypt.compare(password, user.password)
+    });
+    
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
+      console.log("❌ Password validation failed");
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
       });
     }
+    
+    console.log("✅ Password validation successful");
 
     // Update last login
     user.lastLogin = new Date();
