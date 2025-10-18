@@ -5,6 +5,7 @@ const appointmentSchema = new mongoose.Schema(
     appointmentId: { type: String, unique: true },
     doctor: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", required: true },
     patient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient", required: true },
+    location: { type: mongoose.Schema.Types.ObjectId, ref: "Location", required: true },
     staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
     schedule: { type: mongoose.Schema.Types.ObjectId, ref: "DoctorSchedule" },
     appointmentDate: { type: Date },

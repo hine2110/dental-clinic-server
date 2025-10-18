@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { Appointment, DoctorSchedule, Doctor, Patient, Location, Notification } = require("../models");
 const { formatInTimeZone } = require('date-fns-tz');
 // ==================== UTILITY FUNCTIONS ====================
@@ -70,12 +71,14 @@ const isTimeSlotAvailable = async (time, date, locationId) => {
 const getAvailableDoctors = async (time, date, locationId) => {
   try {
     console.log(`\n--- [DEBUG] Bắt đầu getAvailableDoctors cho giờ ${time} ---`);
-    const targetDateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const targetDateEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+
+    const targetDate = new Date(date);
+    const targetDateStart = new Date(targetDate.setUTCHours(0, 0, 0, 0));
+    const targetDateEnd = new Date(targetDate.setUTCDate(targetDate.getUTCDate() + 1));
 
     // BƯỚC 1: Tìm tất cả bác sĩ CÓ LỊCH LÀM VIỆC
-    const schedules = await DoctorSchedule.find({
-      location: locationId,
+      const schedules = await DoctorSchedule.find({
+      location: new mongoose.Types.ObjectId(locationId),
       date: { $gte: targetDateStart, $lt: targetDateEnd },
       startTime: { $lte: time },
       endTime: { $gt: time },
@@ -305,10 +308,17 @@ const getAvailableDoctorsAPI = async (req, res) => {
  */
 const createAppointment = async (req, res) => {
   try {
-    const { doctorId, date, time, reasonForVisit } = req.body;
+    const { doctorId, locationId, date, time, reasonForVisit } = req.body;
     const patientId = req.patient._id;
 
-    if (!doctorId || !date || !time) {
+    if (!doctorId || !locationId || !date || !time) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu thông tin bắt buộc (bác sĩ, cơ sở, ngày, giờ)"
+      });
+    }
+
+    if (!doctorId || !locationId || !date || !time) {
       return res.status(400).json({
         success: false,
         message: "Thiếu thông tin bắt buộc"
@@ -354,6 +364,7 @@ const createAppointment = async (req, res) => {
     // Kiểm tra bác sĩ có lịch làm việc trong giờ này không
     const doctorSchedule = await DoctorSchedule.findOne({
       doctor: doctorId,
+      location: locationId,
       date: {
         $gte: new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate()),
         $lt: new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate() + 1)
@@ -404,6 +415,7 @@ const createAppointment = async (req, res) => {
       appointmentId,
       doctor: doctorId,
       patient: patientId,
+      location: locationId, 
       schedule: doctorSchedule._id,
       appointmentDate,
       startTime: time,
