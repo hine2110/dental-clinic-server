@@ -111,7 +111,14 @@ cron.schedule('* * * * *', () => {
   console.log('--- [CRON] Triggering scheduled task: updateOverdueAppointments ---');
   taskController.updateOverdueAppointments();
 });
+
+cron.schedule('* * * * *', () => {
+  console.log('--- [CRON] Triggering scheduled task: updateOnHoldToNoShow ---');
+  taskController.updateOnHoldToNoShow();
+});
+
 console.log('✅ Cron job for updating overdue appointments has been scheduled to run every minute.');
+console.log('✅ Cron job for auto no-show on-hold appointments has been scheduled to run every minute.');
 // ====================================================================
 
 app.listen(PORT, () => {
