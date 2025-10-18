@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
 const serviceController = require("../controllers/serviceController");
+const discountController = require("../controllers/discountController");
 const {
   uploadImage,
   deleteImage,
@@ -11,7 +12,8 @@ const { authenticate, authorize } = require("../middlewares/auth");
 const { upload, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực cho tất cả routes admin
-router.use(authenticate);
+
+ router.use(authenticate);
 
 // Middleware kiểm tra quyền admin
 const checkAdminRole = (req, res, next) => {
@@ -88,5 +90,21 @@ router.delete("/upload/image/:filename", deleteImage);
 
 // GET /api/admin/upload/image/:filename - Lấy ảnh
 router.get("/upload/image/:filename", getImage);
+
+// ==================== QUẢN LÝ DISCOUNTS ==================== // 
+// POST /api/admin/discounts - Tạo discount mới
+router.post("/discounts", discountController.createDiscount);
+
+// GET /api/admin/discounts - Lấy tất cả discounts
+router.get("/discounts", discountController.getAllDiscounts);
+
+// GET /api/admin/discounts/:id - Lấy discount theo ID
+router.get("/discounts/:id", discountController.getDiscountById);
+
+// PUT /api/admin/discounts/:id - Cập nhật discount
+router.put("/discounts/:id", discountController.updateDiscount);
+
+// DELETE /api/admin/discounts/:id - Xóa discount
+router.delete("/discounts/:id", discountController.deleteDiscount);
 
 module.exports = router;

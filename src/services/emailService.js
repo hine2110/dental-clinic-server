@@ -25,6 +25,22 @@ const createEmailTemplate = (title, content) => `
   </div>
 `;
 
+const sendEmail = async ({ to, subject, html, title }) => {
+    try {
+        const mailOptions = {
+            from: `"BeautySmile Clinic" <${process.env.EMAIL_USER}>`,
+            to: to,
+            subject: subject,
+            html: createEmailTemplate(title, html)
+        };
+        await transporter.sendMail(mailOptions);
+        console.log(`✅ Email sent successfully to ${to}`);
+        return { success: true };
+    } catch (error) {
+        console.error(`Email send error to ${to}:`, error);
+    }
+};
+
 // Gửi mã xác thực
 const sendVerificationCode = async (email, code) => {
     try {
@@ -116,6 +132,7 @@ const sendAppointmentConfirmationEmail = async (appointmentDetails) => {
 };
 
 module.exports = {
+    sendEmail,
     sendVerificationCode,
     sendPasswordResetEmail,
     sendAppointmentConfirmationEmail

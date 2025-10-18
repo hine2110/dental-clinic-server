@@ -5,7 +5,6 @@ const createService = async (req, res) => {
   try {
     const {
       name,
-      thumbnail,
       description,
       category,
       price,
@@ -34,7 +33,6 @@ const createService = async (req, res) => {
     // Prepare service data - convert string values to appropriate types
     const serviceData = {
       name,
-      thumbnail,
       description,
       category,
       price: parseFloat(price),
@@ -63,6 +61,7 @@ const createService = async (req, res) => {
 
     // Add image data if file was uploaded
     if (req.file) {
+      // Lưu thông tin chi tiết vào object 'image'
       serviceData.image = {
         filename: req.file.filename,
         originalName: req.file.originalname,
@@ -70,8 +69,9 @@ const createService = async (req, res) => {
         size: req.file.size,
         mimetype: req.file.mimetype,
       };
+      // TẠO VÀ LƯU URL ĐẦY ĐỦ VÀO TRƯỜNG 'thumbnail'
+      serviceData.thumbnail = `http://localhost:5000/uploads/${req.file.filename}`;
     }
-
     // Create service
     const service = await Service.create(serviceData);
 
@@ -101,6 +101,14 @@ const createService = async (req, res) => {
 
 // ==================== GET ALL SERVICES ====================
 const getAllServices = async (req, res) => {
+  if (!Service || typeof Service.find !== 'function') {
+    console.error("Service model is not imported correctly.");
+    return res.status(500).json({
+        success: false,
+        message: "Server configuration error.",
+    });
+  }
+
   try {
     const {
       category,
@@ -112,20 +120,16 @@ const getAllServices = async (req, res) => {
       sortOrder = "desc",
     } = req.query;
 
-    // Build filter object
     const filter = {};
 
-    // Filter by category if specified
-    if (category && category !== "all") {
+    if (category && category !== "all" && category !== "undefined") {
       filter.category = category;
     }
 
-    // Filter by active status if specified
-    if (isActive !== undefined) {
+    if (isActive !== undefined && isActive !== "all" && isActive !== "undefined") {
       filter.isActive = isActive === "true";
     }
 
-    // Filter by search term (name or description)
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
@@ -133,61 +137,53 @@ const getAllServices = async (req, res) => {
       ];
     }
 
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const usePagination = limit !== "all" && parseInt(limit) > 0;
+    const limitNum = usePagination ? parseInt(limit) : 0;
+    const skip = usePagination ? (parseInt(page) - 1) * limitNum : 0;
+
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === "desc" ? -1 : 1;
 
-    // Get services with pagination and sorting
-    let serviceQuery = Service.find(filter).sort(sortOptions);
+    const services = await Service.find(filter)
+                                   .sort(sortOptions)
+                                   .skip(skip)
+                                   .limit(limitNum)
+                                   .lean();
 
-    if (limit !== "all" && parseInt(limit) > 0) {
-      serviceQuery = serviceQuery.skip(skip).limit(parseInt(limit));
-    }
-
-    const services = await serviceQuery;
-
-    // Get total count for pagination
     const totalServices = await Service.countDocuments(filter);
 
-    // Calculate pagination info
-    const actualLimit = limit === "all" ? totalServices : parseInt(limit);
-    const totalPages =
-      limit === "all" ? 1 : Math.ceil(totalServices / parseInt(limit));
-    const hasNextPage = limit === "all" ? false : parseInt(page) < totalPages;
-    const hasPrevPage = limit === "all" ? false : parseInt(page) > 1;
+    const totalPages = usePagination ? Math.ceil(totalServices / limitNum) : 1;
+    const currentPageNum = parseInt(page);
 
     res.status(200).json({
       success: true,
       message: "Services retrieved successfully",
       data: services,
       pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalServices,
-        hasNextPage,
-        hasPrevPage,
-        limit: actualLimit,
+        currentPage: currentPageNum,
+        totalPages: totalPages,
+        totalServices: totalServices,
+        hasNextPage: usePagination ? currentPageNum < totalPages : false,
+        hasPrevPage: usePagination ? currentPageNum > 1 : false,
+        limit: usePagination ? limitNum : totalServices,
       },
       filters: {
         category: category || "all",
-        isActive: isActive || "all",
+        isActive: isActive !== undefined && isActive !== "all" ? (isActive === "true") : "all",
         search: search || "",
         sortBy,
         sortOrder,
       },
     });
   } catch (error) {
-    console.error("Get all services error:", error);
-
+    console.error("Get all services error:", error); 
     res.status(500).json({
       success: false,
       message: "Server error retrieving services",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      error: error.message,
     });
   }
 };
-
 // ==================== GET SERVICE BY ID ====================
 const getServiceById = async (req, res) => {
   try {
@@ -316,6 +312,8 @@ const updateService = async (req, res) => {
         size: req.file.size,
         mimetype: req.file.mimetype,
       };
+      // TẠO VÀ LƯU URL ĐẦY ĐỦ VÀO TRƯỜNG 'thumbnail'
+      updateData.thumbnail = `http://localhost:5000/uploads/${req.file.filename}`;
     }
 
     // Manual validation for critical fields
