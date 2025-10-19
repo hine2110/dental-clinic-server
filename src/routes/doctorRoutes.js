@@ -8,8 +8,12 @@ const {
   
   // Appointments
   getDoctorAppointments,
-  confirmAppointment,
-  cancelAppointment,
+  completeAppointment,
+  markNoShow,
+  startExamination,
+  putOnHold,
+  getAppointmentDetails,
+  updateAppointmentStatus,
   
   // Patients
   getDoctorPatients,
@@ -18,6 +22,9 @@ const {
   // Prescriptions
   createPrescription,
   getDoctorPrescriptions,
+  
+  // Medical Records
+  getMedicines,
   
   // Schedule
   getDoctorSchedule
@@ -66,19 +73,55 @@ router.put('/profile', updateDoctorProfile);
 router.get('/appointments', getDoctorAppointments);
 
 /**
- * @route   PUT /api/doctor/appointments/:appointmentId/confirm
- * @desc    Xác nhận lịch hẹn
+ * @route   PATCH /api/doctor/appointments/:appointmentId/complete
+ * @desc    Hoàn thành khám bệnh
  * @access  Private (Doctor only)
  */
-router.put('/appointments/:appointmentId/confirm', confirmAppointment);
+router.patch('/appointments/:appointmentId/complete', completeAppointment);
 
 /**
- * @route   DELETE /api/doctor/appointments/:appointmentId/cancel
- * @desc    Hủy lịch hẹn
+ * @route   PATCH /api/doctor/appointments/:appointmentId/no-show
+ * @desc    Đánh dấu bệnh nhân không đến
  * @access  Private (Doctor only)
  * @body    reason (optional)
  */
-router.delete('/appointments/:appointmentId/cancel', cancelAppointment);
+router.patch('/appointments/:appointmentId/no-show', markNoShow);
+
+/**
+ * @route   PATCH /api/doctor/appointments/:appointmentId/start-examination
+ * @desc    Bắt đầu khám bệnh
+ * @access  Private (Doctor only)
+ */
+router.patch('/appointments/:appointmentId/start-examination', startExamination);
+
+/**
+ * @route   PATCH /api/doctor/appointments/:appointmentId/continue-examination
+ * @desc    Tiếp tục khám bệnh sau khi có kết quả xét nghiệm
+ * @access  Private (Doctor only)
+ */
+router.patch('/appointments/:appointmentId/continue-examination', startExamination);
+
+/**
+ * @route   PATCH /api/doctor/appointments/:appointmentId/on-hold
+ * @desc    Tạm hoãn khám bệnh
+ * @access  Private (Doctor only)
+ * @body    reason (optional)
+ */
+router.patch('/appointments/:appointmentId/on-hold', putOnHold);
+
+/**
+ * @route   GET /api/doctor/appointments/:id
+ * @desc    Lấy chi tiết lịch hẹn cho hồ sơ bệnh án
+ * @access  Private (Doctor only)
+ */
+router.get('/appointments/:id', getAppointmentDetails);
+
+/**
+ * @route   PUT /api/doctor/appointments/:id
+ * @desc    Cập nhật trạng thái lịch hẹn và thông tin khám bệnh
+ * @access  Private (Doctor only)
+ */
+router.put('/appointments/:id', updateAppointmentStatus);
 
 // ==================== DOCTOR PATIENTS ====================
 
@@ -124,6 +167,15 @@ router.get('/prescriptions', getDoctorPrescriptions);
  * @query   startDate, endDate
  */
 router.get('/schedule', getDoctorSchedule);
+
+// ==================== MEDICINES ====================
+
+/**
+ * @route   GET /api/doctor/medicines
+ * @desc    Lấy danh sách thuốc
+ * @access  Private (Doctor only)
+ */
+router.get('/medicines', getMedicines);
 
 // ==================== DOCTOR MEDICAL RECORDS ====================
 

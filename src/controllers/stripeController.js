@@ -1,6 +1,6 @@
 const Stripe = require('stripe');
 const stripeConfig = require('../config/stripe');
-const { Appointment, Patient, Doctor } = require('../models');
+const { Appointment, Patient, Doctor, Location } = require('../models');
 const { sendAppointmentConfirmationEmail } = require('../services/emailService');
 
 const stripe = Stripe(stripeConfig.secretKey);
@@ -8,11 +8,11 @@ const stripe = Stripe(stripeConfig.secretKey);
 // ... hàm createCheckoutSession không thay đổi ...
 async function createCheckoutSession(req, res) {
     try {
-        const { doctorId, date, time, reasonForVisit } = req.body || {};
+        const { doctorId, locationId, date, time, reasonForVisit } = req.body || {};
         if (!req.user || !req.user._id) {
             return res.status(401).json({ success: false, message: 'Vui lòng đăng nhập' });
         }
-        if (!doctorId || !date || !time) {
+        if (!doctorId || !locationId || !date || !time) {
             return res.status(400).json({ success: false, message: 'Thiếu thông tin lịch hẹn' });
         }
         const amount = 35000;
@@ -35,6 +35,7 @@ async function createCheckoutSession(req, res) {
             cancel_url: `${stripeConfig.frontendUrl}/payment?status=cancel`,
             metadata: {
                 doctorId,
+                locationId,
                 date,
                 time,
                 reasonForVisit: reasonForVisit || '',
@@ -64,7 +65,7 @@ async function webhook(req, res) {
         if (event.type === 'checkout.session.completed') {
             console.log("✅ Webhook 'checkout.session.completed' received.");
             const session = event.data.object;
-            const { doctorId, date, time, reasonForVisit, patientId } = session.metadata || {}; // patientId ở đây là User ID
+            const { doctorId, locationId, date, time, reasonForVisit, patientId } = session.metadata || {}; // patientId ở đây là User ID
 
             // Map user -> Patient document to keep schema consistent
             const patientDoc = await Patient.findOne({ user: patientId }).select('_id');
@@ -82,6 +83,7 @@ async function webhook(req, res) {
                 const newAppointment = await Appointment.create({
                     appointmentId,
                     doctor: doctorId,
+                    location: locationId,
                     // store Patient _id when available; fallback to User id (legacy)
                     patient: patientRef || patientId,
                     appointmentDate: new Date(date),
@@ -98,10 +100,12 @@ async function webhook(req, res) {
                     // SỬA LỖI: Dùng findOne({ user: patientId }) thay vì findById
                     const patientProfile = await Patient.findOne({ user: patientId }).populate('user', 'email');
                     const doctorProfile = await Doctor.findById(doctorId).populate('user', 'fullName');
+                    const locationProfile = await Location.findById(locationId);
 
                     console.log("🔍 Fetched Patient Profile:", patientProfile ? 'Found' : 'Not Found');
                     console.log("🔍 Fetched Doctor Profile:", doctorProfile ? 'Found' : 'Not Found');
-                    
+                    console.log("🔍 Fetched Location Profile:", locationProfile ? 'Found' : 'Not Found');
+
                     if (patientProfile && patientProfile.user && doctorProfile && doctorProfile.user) {
                         const emailDetails = {
                             patientEmail: patientProfile.user.email,
@@ -109,6 +113,7 @@ async function webhook(req, res) {
                             doctorName: doctorProfile.user.fullName,
                             appointmentDate: newAppointment.appointmentDate,
                             startTime: newAppointment.startTime,
+                            locationName: locationProfile.name,
                         };
                         console.log("✉️ Sending email with details:", emailDetails);
                         await sendAppointmentConfirmationEmail(emailDetails);
