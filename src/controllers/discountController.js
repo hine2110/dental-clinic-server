@@ -58,6 +58,10 @@ const deleteDiscount = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to delete discount.', error: error.message });
   }
 };
+// daodaosdasd
+//dasdjasd 
+//doasidoasd
+//adasijdjsad
 
 module.exports = {
   createDiscount,
