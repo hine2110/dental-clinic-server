@@ -62,6 +62,9 @@ const deleteDiscount = async (req, res) => {
 //dasdjasd 
 //doasidoasd
 //adasijdjsad
+// dasdas 
+//dasdasdasd
+//ddadasd 
 
 module.exports = {
   createDiscount,
