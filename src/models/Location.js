@@ -5,7 +5,8 @@ const locationSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
+      unique: true
     },
     address: {
       street: { type: String, trim: true },

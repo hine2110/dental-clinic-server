@@ -7,6 +7,7 @@ const EquipmentIssue = require("../models/EquipmentIssue");
 const Invoice = require("../models/Invoice");
 const Notification = require("../models/Notification");
 
+
 const parseTimeToMinutes = (time) => {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -1061,10 +1062,146 @@ const getAllLocations = async (req, res) => {
   }
 };
 
+const getLocationById = async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    const location = await Location.findById(locationId);
+
+    if (!location) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy cơ sở." });
+    }
+
+    res.status(200).json({ success: true, data: location });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy thông tin cơ sở.",
+      error: error.message
+    });
+  }
+};
+
+const createLocation = async (req, res) => {
+  try {
+    const newLocation = new Location({
+      name: req.body.name,
+      address: req.body.address,
+      phone: req.body.phone,
+      email: req.body.email,
+      isActive: req.body.isActive
+    });
+
+    await newLocation.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Tạo cơ sở mới thành công!",
+      data: newLocation
+    });
+  } catch (error) {
+    // 1. CHECK FOR VALIDATION ERROR
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại các trường bắt buộc.",
+        error: error.message
+      });
+    }
+
+    // 2. ADD THIS BLOCK TO CHECK FOR DUPLICATE KEY ERROR
+    if (error.code === 11000) {
+      return res.status(409).json({ // 409 Conflict is a better status code
+        success: false,
+        message: `Tên cơ sở "${req.body.name}" đã tồn tại. Vui lòng chọn tên khác.`
+      });
+    }
+
+    // 3. FALLBACK FOR OTHER SERVER ERRORS
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server khi tạo cơ sở mới.",
+      error: error.message
+    });
+  }
+};
+const updateLocation = async (req, res) => {
+  try {
+    const { locationId } = req.params; // Vẫn lấy _id từ params
+    const { name, address, phone, email, isActive } = req.body;
+
+    // Tìm và cập nhật trong một bước
+    const updatedLocation = await Location.findByIdAndUpdate(
+      locationId, // Điều kiện tìm kiếm theo _id
+      { name, address, phone, email, isActive }, // Dữ liệu cần cập nhật
+      { 
+        new: true, // Tùy chọn này để trả về document đã được cập nhật
+        runValidators: true // Tùy chọn này để đảm bảo các rule trong schema (như required) được áp dụng
+      }
+    );
+
+    if (!updatedLocation) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy cơ sở." });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật thông tin cơ sở thành công!",
+      data: updatedLocation
+    });
+
+  } catch (error) {
+    // Xử lý lỗi trùng tên (unique) khi cập nhật
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: `Tên cơ sở "${req.body.name}" đã tồn tại.`
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi cập nhật cơ sở.",
+      error: error.message
+    });
+  }
+};
+
+const deleteLocation = async (req, res) => {
+  try {
+    const { locationId } = req.params;
+
+    // Tìm theo _id và cập nhật isActive thành false
+    const location = await Location.findByIdAndUpdate(
+        locationId, 
+        { isActive: false },
+        { new: true }
+    );
+
+    if (!location) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy cơ sở." });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Đã vô hiệu hóa cơ sở "${location.name}" thành công.`
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi xóa cơ sở.",
+      error: error.message
+    });
+  }
+};
 module.exports = {
   getAllDoctors,
   getAllStaff,
   getAllLocations,
+  getLocationById,
+  updateLocation,
+  createLocation,
+  deleteLocation,
   getDoctorSchedules,
   getStaffSchedules,
   createDoctorSchedule,

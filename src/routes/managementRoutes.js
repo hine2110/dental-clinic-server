@@ -10,7 +10,7 @@ router.use(checkManagementRole);
 
 // Get all doctors and staff
 router.get("/doctors",
-  // checkManagementPermission("viewDoctorProfile"), // Temporarily disabled for debugging
+  checkManagementPermission("viewDoctorProfile"),
   managementController.getAllDoctors
 );
 
@@ -20,8 +20,23 @@ router.get("/staff",
 );
 
 router.get("/locations",
-  checkManagementPermission("viewStaffProfile"),
+  checkManagementPermission("getAllLocations"),
   managementController.getAllLocations
+);
+
+router.post("/locations",
+  checkManagementPermission("createLocation"),
+  managementController.createLocation
+);
+
+router.put("/locations/:locationId",
+  checkManagementPermission("updateLocation"),
+  managementController.updateLocation
+);
+
+router.delete("/locations/:locationId",
+  checkManagementPermission("deleteLocation"),
+  managementController.deleteLocation
 );
 
 // Profiles
