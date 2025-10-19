@@ -1,3 +1,4 @@
+const io = require('../services/socket').getIO();
 const Contact = require("../models/Contact");
 const Staff = require("../models/Staff"); 
 const { sendEmail } = require("../services/emailService"); 
@@ -11,6 +12,12 @@ const handleContactSubmission = async (req, res) => {
     }
 
     await Contact.create({ name, email, subject, message });
+    // === BẮT ĐẦU PHẦN THÊM MỚI: GỬI TÍN HIỆU REAL-TIME ===
+    // Gửi tín hiệu có tên 'new_contact_received' đến tất cả client đang kết nối
+    io.emit('new_contact_received');
+    console.log("📢 Emitted 'new_contact_received' event to all clients.");
+    // === KẾT THÚC PHẦN MỚI ===
+
     const receptionists = await Staff.find({ staffType: 'receptionist', isActive: true })
                                      .populate('user', 'email');
     const receptionistEmails = receptionists.map(staff => staff.user?.email).filter(Boolean);
@@ -119,9 +126,25 @@ const replyToContact = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error while sending reply." });
   }
 };
+// === BẮT ĐẦU PHẦN THÊM MỚI: HÀM ĐẾM SỐ TIN NHẮN CHƯA ĐỌC ===
+const getUnreadCount = async (req, res) => {
+  try {
+    const unreadCount = await Contact.countDocuments({ status: 'new' });
+    res.status(200).json({
+      success: true,
+      data: {
+        count: unreadCount
+      }
+    });
+  } catch (error) {
+    console.error("Get unread count error:", error);
+    res.status(500).json({ success: false, message: "Server error while fetching unread count." });
+  }
+};
 
 module.exports = {
   handleContactSubmission,
   getAllContacts,       
-  replyToContact    
+  replyToContact,
+  getUnreadCount
 };

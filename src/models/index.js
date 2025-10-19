@@ -5,6 +5,7 @@ const Doctor = require("./Doctor");
 const Staff = require("./Staff");
 const Patient = require("./Patient");
 const DoctorSchedule = require("./DoctorSchedule");
+const StaffSchedule = require("./StaffSchedule");
 const Appointment = require("./Appointment");
 const Service = require("./Service");
 const Equipment = require("./Equipment");
@@ -25,6 +26,7 @@ module.exports = {
   Staff,
   Patient,
   DoctorSchedule,
+  StaffSchedule,
   Appointment,
   Service,
   Equipment,

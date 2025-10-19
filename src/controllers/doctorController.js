@@ -101,10 +101,17 @@ const getDoctorAppointments = async (req, res) => {
       });
     }
 
-    let query = { doctor: doctor._id };
+    let query = { 
+      doctor: doctor._id,
+      // Doctor chỉ quản lý các trạng thái: checked-in, on-hold, in-progress, waiting-for-results, completed, no-show, cancelled
+      status: { $in: ['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'completed', 'no-show', 'cancelled'] }
+    };
     
     if (status) {
-      query.status = status;
+      // Chỉ cho phép filter theo các trạng thái mà Doctor quản lý
+      if (['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'completed', 'no-show', 'cancelled'].includes(status)) {
+        query.status = status;
+      }
     }
     
     if (date) {
@@ -135,13 +142,16 @@ const getDoctorAppointments = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
+    // Filter out appointments with null patient
+    const validAppointments = appointments.filter(appointment => appointment.patient && appointment.patient._id);
+
     const total = await Appointment.countDocuments(query);
 
     res.status(200).json({
       success: true,
       message: "Lấy danh sách lịch hẹn thành công",
       data: {
-        appointments,
+        appointments: validAppointments,
         pagination: {
           currentPage: parseInt(page),
           totalPages: Math.ceil(total / limit),
@@ -538,7 +548,14 @@ const getDoctorPrescriptions = async (req, res) => {
     }
 
     const prescriptions = await Prescription.find(query)
-      .populate('patient', 'user basicInfo')
+      .populate({
+        path: 'patient',
+        select: 'user basicInfo contactInfo',
+        populate: {
+          path: 'user',
+          select: 'fullName email phone'
+        }
+      })
       .populate('appointment', 'appointmentDate startTime')
       .populate('medications.medicine', 'name description')
       .populate('services', 'name price')
@@ -626,6 +643,442 @@ const getDoctorSchedule = async (req, res) => {
   }
 };
 
+/**
+ * Hoàn thành khám bệnh
+ * PATCH /api/doctor/appointments/:appointmentId/complete
+ */
+const completeAppointment = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const doctorId = req.user._id;
+
+    // Tìm doctor profile
+    const doctor = await Doctor.findOne({ user: doctorId });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin bác sĩ"
+      });
+    }
+
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      doctor: doctor._id,
+      status: { $in: ["checked-in", "in-progress"] }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy lịch hẹn hoặc không thể hoàn thành"
+      });
+    }
+
+    appointment.status = "completed";
+    await appointment.save();
+
+    // Gửi thông báo cho bệnh nhân
+    try {
+      await Notification.create({
+        sender: doctor._id,
+        recipients: [appointment.patient],
+        recipientModel: "Patient",
+        title: "Khám bệnh đã hoàn thành",
+        message: `Lịch hẹn ngày ${appointment.appointmentDate.toLocaleDateString('vi-VN')} lúc ${appointment.startTime} đã được bác sĩ hoàn thành`,
+        type: "appointment_completed",
+        relatedData: {
+          appointmentId: appointment._id,
+          doctorId: doctor._id,
+          patientId: appointment.patient,
+          appointmentDate: appointment.appointmentDate,
+          startTime: appointment.startTime
+        }
+      });
+    } catch (notificationError) {
+      console.error("Error creating notification:", notificationError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Hoàn thành khám bệnh thành công",
+      data: appointment
+    });
+  } catch (error) {
+    console.error("Complete appointment error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi hoàn thành khám bệnh",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Đánh dấu bệnh nhân không đến
+ * PATCH /api/doctor/appointments/:appointmentId/no-show
+ */
+const markNoShow = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const { reason } = req.body;
+    const doctorId = req.user._id;
+
+    // Tìm doctor profile
+    const doctor = await Doctor.findOne({ user: doctorId });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin bác sĩ"
+      });
+    }
+
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      doctor: doctor._id,
+      status: "checked-in"
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy lịch hẹn hoặc không thể đánh dấu không đến"
+      });
+    }
+
+    appointment.status = "no-show";
+    if (reason) {
+      appointment.notes = (appointment.notes || '') + `\nLý do không đến: ${reason}`;
+    }
+    await appointment.save();
+
+    // Gửi thông báo cho bệnh nhân
+    try {
+      await Notification.create({
+        sender: doctor._id,
+        recipients: [appointment.patient],
+        recipientModel: "Patient",
+        title: "Lịch hẹn bị đánh dấu không đến",
+        message: `Lịch hẹn ngày ${appointment.appointmentDate.toLocaleDateString('vi-VN')} lúc ${appointment.startTime} đã được đánh dấu là không đến`,
+        type: "appointment_no_show",
+        relatedData: {
+          appointmentId: appointment._id,
+          doctorId: doctor._id,
+          patientId: appointment.patient,
+          appointmentDate: appointment.appointmentDate,
+          startTime: appointment.startTime,
+          reason: reason
+        }
+      });
+    } catch (notificationError) {
+      console.error("Error creating notification:", notificationError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Đánh dấu không đến thành công",
+      data: appointment
+    });
+  } catch (error) {
+    console.error("Mark no-show error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi đánh dấu không đến",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Bắt đầu khám bệnh
+ * PATCH /api/doctor/appointments/:appointmentId/start-examination
+ */
+const startExamination = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const doctorId = req.user._id;
+
+    // Tìm doctor profile
+    const doctor = await Doctor.findOne({ user: doctorId });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin bác sĩ"
+      });
+    }
+
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      doctor: doctor._id,
+      status: { $in: ["checked-in", "on-hold", "waiting-for-results", "in-progress"] }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy lịch hẹn hoặc không thể bắt đầu khám"
+      });
+    }
+
+    appointment.status = "in-progress";
+    appointment.onHoldAt = null; // Xóa thời gian tạm hoãn khi bắt đầu khám
+    await appointment.save();
+
+    // Gửi thông báo cho bệnh nhân
+    try {
+      await Notification.create({
+        sender: doctor._id,
+        recipients: [appointment.patient],
+        recipientModel: "Patient",
+        title: "Bác sĩ đã bắt đầu khám bệnh",
+        message: `Bác sĩ đã bắt đầu khám bệnh cho lịch hẹn ngày ${appointment.appointmentDate.toLocaleDateString('vi-VN')} lúc ${appointment.startTime}`,
+        type: "examination_started",
+        relatedData: {
+          appointmentId: appointment._id,
+          doctorId: doctor._id,
+          patientId: appointment.patient,
+          appointmentDate: appointment.appointmentDate,
+          startTime: appointment.startTime
+        }
+      });
+    } catch (notificationError) {
+      console.error("Error creating notification:", notificationError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Bắt đầu khám bệnh thành công",
+      data: appointment
+    });
+  } catch (error) {
+    console.error("Start examination error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi bắt đầu khám bệnh",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Tạm hoãn khám bệnh
+ * PATCH /api/doctor/appointments/:appointmentId/on-hold
+ */
+const putOnHold = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const { reason } = req.body;
+    const doctorId = req.user._id;
+
+    // Tìm doctor profile
+    const doctor = await Doctor.findOne({ user: doctorId });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin bác sĩ"
+      });
+    }
+
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      doctor: doctor._id,
+      status: "checked-in"
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy lịch hẹn hoặc bệnh nhân chưa check-in"
+      });
+    }
+
+    appointment.status = "on-hold";
+    appointment.onHoldAt = new Date(); // Lưu thời gian tạm hoãn
+    if (reason) {
+      appointment.notes = (appointment.notes || '') + `\nTạm hoãn: ${reason}`;
+    }
+    await appointment.save();
+
+    // Gửi thông báo cho bệnh nhân
+    try {
+      await Notification.create({
+        sender: doctor._id,
+        recipients: [appointment.patient],
+        recipientModel: "Patient",
+        title: "Lịch hẹn tạm hoãn",
+        message: `Lịch hẹn ngày ${appointment.appointmentDate.toLocaleDateString('vi-VN')} lúc ${appointment.startTime} đã được tạm hoãn. Vui lòng quay lại khi có thể.`,
+        type: "appointment_on_hold",
+        relatedData: {
+          appointmentId: appointment._id,
+          doctorId: doctor._id,
+          patientId: appointment.patient,
+          appointmentDate: appointment.appointmentDate,
+          startTime: appointment.startTime,
+          reason: reason
+        }
+      });
+    } catch (notificationError) {
+      console.error("Error creating notification:", notificationError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Tạm hoãn khám bệnh thành công",
+      data: appointment
+    });
+  } catch (error) {
+    console.error("Put on hold error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi tạm hoãn khám bệnh",
+      error: error.message
+    });
+  }
+};
+
+// ==================== MEDICAL RECORDS ====================
+
+/**
+ * Lấy chi tiết lịch hẹn cho hồ sơ bệnh án
+ * GET /api/doctor/appointments/:id
+ */
+const getAppointmentDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doctorId = req.user._id;
+
+    // Tìm doctor profile
+    const doctor = await Doctor.findOne({ user: doctorId });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin bác sĩ"
+      });
+    }
+
+    const appointment = await Appointment.findOne({
+      _id: id,
+      doctor: doctor._id
+    })
+    .populate({
+      path: 'patient',
+      select: 'patientId basicInfo contactInfo medicalHistory allergies insuranceInfo',
+      populate: {
+        path: 'user',
+        select: 'fullName email phone'
+      }
+    })
+    .populate({
+      path: 'doctor',
+      select: 'doctorId specialization',
+      populate: {
+        path: 'user',
+        select: 'fullName email phone'
+      }
+    })
+    .select('-__v');
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy lịch hẹn"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy chi tiết lịch hẹn thành công",
+      data: appointment
+    });
+  } catch (error) {
+    console.error("Get appointment details error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy chi tiết lịch hẹn",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Cập nhật trạng thái lịch hẹn và thông tin khám bệnh
+ * PUT /api/doctor/appointments/:id
+ */
+const updateAppointmentStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+    const doctorId = req.user._id;
+
+    // Tìm doctor profile
+    const doctor = await Doctor.findOne({ user: doctorId });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin bác sĩ"
+      });
+    }
+    
+    const appointment = await Appointment.findOne({
+      _id: id,
+      doctor: doctor._id
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy lịch hẹn"
+      });
+    }
+
+    // Cập nhật dữ liệu
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] !== undefined) {
+        appointment[key] = updateData[key];
+      }
+    });
+
+    await appointment.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật lịch hẹn thành công",
+      data: appointment
+    });
+  } catch (error) {
+    console.error("Update appointment status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi cập nhật lịch hẹn",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Lấy danh sách thuốc
+ * GET /api/medicines
+ */
+const getMedicines = async (req, res) => {
+  try {
+    const medicines = await Medicine.find({ isActive: true })
+      .select('name description unit price')
+      .sort({ name: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách thuốc thành công",
+      data: medicines
+    });
+  } catch (error) {
+    console.error("Get medicines error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy danh sách thuốc",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   // Profile
   getDoctorProfile,
@@ -633,8 +1086,12 @@ module.exports = {
   
   // Appointments
   getDoctorAppointments,
-  confirmAppointment,
-  cancelAppointment,
+  completeAppointment,
+  markNoShow,
+  startExamination,
+  putOnHold,
+  getAppointmentDetails,
+  updateAppointmentStatus,
   
   // Patients
   getDoctorPatients,
@@ -643,6 +1100,9 @@ module.exports = {
   // Prescriptions
   createPrescription,
   getDoctorPrescriptions,
+  
+  // Medical Records
+  getMedicines,
   
   // Schedule
   getDoctorSchedule

@@ -10,6 +10,7 @@ const {
   getPatientAppointments, 
   cancelAppointment 
 } = require('../controllers/patientAppointmentController');
+const { getActiveLocations } = require('../controllers/locationController');
 
 // ==================== PATIENT PROFILE ====================
 
@@ -40,6 +41,8 @@ router.get('/appointments/available-times', getAvailableTimeSlotsAPI);
 
 // GET /api/patient/appointments/available-doctors - Lấy danh sách bác sĩ khả dụng
 router.get('/appointments/available-doctors', getAvailableDoctorsAPI);
+
+router.get('/locations', getActiveLocations);
 
 // POST /api/patient/appointments - Đặt lịch hẹn
 router.post('/appointments', authenticate, createAppointment);
