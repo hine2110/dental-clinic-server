@@ -20,7 +20,7 @@ const discountSchema = new mongoose.Schema(
     },
     maxUsage: {
       type: Number,
-      default: null,
+      default: null, 
     },
     usageCount: {
       type: Number,
@@ -28,11 +28,11 @@ const discountSchema = new mongoose.Schema(
     },
     startDate: {
       type: Date,
-      default: null, 
+      required: [true, 'Start date is required'], 
     },
     endDate: {
       type: Date,
-      default: null, 
+      required: [true, 'End date is required'],   
     },
     isActive: {
       type: Boolean,
@@ -40,7 +40,7 @@ const discountSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: true,
+    timestamps: true, 
   }
 );
 const Discount = mongoose.model('Discount', discountSchema);
