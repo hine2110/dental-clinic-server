@@ -1,4 +1,4 @@
-const { Doctor, Appointment, Patient, Prescription, Medicine, Service, Notification } = require("../models");
+const { Doctor, Appointment, Patient, Prescription, Medicine, Service, Notification, User, DoctorSchedule } = require("../models");
 const { formatInTimeZone } = require('date-fns-tz');
 
 // ==================== DOCTOR PROFILE ====================
@@ -43,19 +43,41 @@ const getDoctorProfile = async (req, res) => {
  */
 const updateDoctorProfile = async (req, res) => {
   try {
-    const doctorId = req.user._id;
+    const userId = req.user._id;
     const updateData = req.body;
 
-    // Loại bỏ các field không được phép cập nhật
-    delete updateData._id;
-    delete updateData.user;
-    delete updateData.doctorId;
-    delete updateData.createdAt;
-    delete updateData.updatedAt;
+    // Tách riêng phone để cập nhật vào User model
+    const { phone, ...doctorUpdateData } = updateData;
 
+    // Loại bỏ các field không được phép cập nhật
+    delete doctorUpdateData._id;
+    delete doctorUpdateData.user;
+    delete doctorUpdateData.doctorId;
+    delete doctorUpdateData.createdAt;
+    delete doctorUpdateData.updatedAt;
+
+    // Cập nhật User model nếu có phone
+    if (phone !== undefined) {
+      // Validate phone number format
+      const phoneRegex = /^[0-9]{10}$/;
+      if (!phoneRegex.test(phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Số điện thoại không hợp lệ. Phải có đúng 10 chữ số."
+        });
+      }
+      
+      await User.findByIdAndUpdate(
+        userId,
+        { phone },
+        { new: true, runValidators: true }
+      );
+    }
+
+    // Cập nhật Doctor model
     const doctor = await Doctor.findOneAndUpdate(
-      { user: doctorId },
-      updateData,
+      { user: userId },
+      doctorUpdateData,
       { new: true, runValidators: true }
     ).populate('user', 'fullName email phone avatar');
 
@@ -103,13 +125,13 @@ const getDoctorAppointments = async (req, res) => {
 
     let query = { 
       doctor: doctor._id,
-      // Doctor chỉ quản lý các trạng thái: checked-in, on-hold, in-progress, waiting-for-results, completed, no-show, cancelled
-      status: { $in: ['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'completed', 'no-show', 'cancelled'] }
+      // Doctor chỉ quản lý các trạng thái: checked-in, on-hold, in-progress, waiting-for-results, in-treatment, completed, no-show, cancelled
+      status: { $in: ['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'completed', 'no-show', 'cancelled'] }
     };
     
     if (status) {
       // Chỉ cho phép filter theo các trạng thái mà Doctor quản lý
-      if (['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'completed', 'no-show', 'cancelled'].includes(status)) {
+      if (['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'completed', 'no-show', 'cancelled'].includes(status)) {
         query.status = status;
       }
     }
@@ -601,6 +623,7 @@ const getDoctorSchedule = async (req, res) => {
 
     // Tìm doctor profile
     const doctor = await Doctor.findOne({ user: doctorId });
+    
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -608,18 +631,25 @@ const getDoctorSchedule = async (req, res) => {
       });
     }
 
-    let query = { doctor: doctor._id };
-    
-    if (startDate && endDate) {
-      query.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    // Try to find DoctorSchedule, but don't fail if it doesn't exist
+    let schedules = [];
+    try {
+      let query = { doctor: doctor._id };
+      
+      if (startDate && endDate) {
+        query.date = {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        };
+      }
 
-    const schedules = await DoctorSchedule.find(query)
-      .populate('location', 'name address')
-      .sort({ date: 1, startTime: 1 });
+      schedules = await DoctorSchedule.find(query)
+        .populate('location', 'name address')
+        .sort({ date: 1, startTime: 1 });
+    } catch (scheduleError) {
+      // Continue execution, just return empty schedules
+      console.error("DoctorSchedule query error:", scheduleError.message);
+    }
 
     res.status(200).json({
       success: true,
@@ -809,7 +839,7 @@ const startExamination = async (req, res) => {
     const appointment = await Appointment.findOne({
       _id: appointmentId,
       doctor: doctor._id,
-      status: { $in: ["checked-in", "on-hold", "waiting-for-results", "in-progress"] }
+      status: { $in: ["checked-in", "on-hold", "waiting-for-results", "in-treatment", "in-progress"] }
     });
 
     if (!appointment) {
@@ -1009,6 +1039,15 @@ const updateAppointmentStatus = async (req, res) => {
     const updateData = req.body;
     const doctorId = req.user._id;
 
+    // Validate status if provided
+    const validStatuses = ['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'completed', 'no-show', 'cancelled'];
+    if (updateData.status && !validStatuses.includes(updateData.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Trạng thái không hợp lệ"
+      });
+    }
+
     // Tìm doctor profile
     const doctor = await Doctor.findOne({ user: doctorId });
     if (!doctor) {
@@ -1028,6 +1067,31 @@ const updateAppointmentStatus = async (req, res) => {
         success: false,
         message: "Không tìm thấy lịch hẹn"
       });
+    }
+
+    // Validate status transition
+    const currentStatus = appointment.status;
+    const newStatus = updateData.status;
+    
+    if (newStatus) {
+      // Define valid transitions
+      const validTransitions = {
+        'checked-in': ['on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'no-show'],
+        'on-hold': ['in-progress', 'waiting-for-results', 'in-treatment', 'no-show'],
+        'in-progress': ['waiting-for-results', 'in-treatment', 'completed'],
+        'waiting-for-results': ['in-progress', 'completed'],
+        'in-treatment': ['in-progress', 'completed'],
+        'completed': [], // Cannot change from completed
+        'no-show': [], // Cannot change from no-show
+        'cancelled': [] // Cannot change from cancelled
+      };
+      
+      if (validTransitions[currentStatus] && !validTransitions[currentStatus].includes(newStatus) && currentStatus !== newStatus) {
+        return res.status(400).json({
+          success: false,
+          message: `Không thể chuyển từ trạng thái "${currentStatus}" sang "${newStatus}"`
+        });
+      }
     }
 
     // Cập nhật dữ liệu
