@@ -129,6 +129,40 @@ const checkDiscountCodeExists = async (req, res) => {
   }
 };
 
+const applyDiscount = async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập mã giảm giá.' });
+    }
+
+    const discount = await Discount.findOne({ code: code.toUpperCase() });
+
+    if (!discount) {
+      return res.status(404).json({ success: false, message: 'Mã giảm giá không hợp lệ.' });
+    }
+
+    if (!discount.isActive) {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá đã bị vô hiệu hoá.' });
+    }
+
+    const today = new Date();
+    if (today < discount.startDate) {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá chưa đến ngày sử dụng.' });
+    }
+    if (today > discount.endDate) {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá đã hết hạn.' });
+    }
+    if (discount.maxUsage != null && discount.usageCount >= discount.maxUsage) {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá đã hết lượt sử dụng.' });
+    }
+    res.status(200).json({ success: true, message: 'Áp dụng mã thành công!', data: discount });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi hệ thống khi kiểm tra mã.', error: error.message });
+  }
+};
+
 
 module.exports = {
   createDiscount,
@@ -137,4 +171,5 @@ module.exports = {
   updateDiscount,
   deleteDiscount,
   checkDiscountCodeExists,
+  applyDiscount,
 };

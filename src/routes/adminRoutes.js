@@ -98,6 +98,9 @@ router.post("/discounts", discountController.createDiscount);
 // GET /api/admin/discounts - Lấy tất cả discounts
 router.get("/discounts", discountController.getAllDiscounts);
 
+// GET /api/admin/discounts/check-code/:code - Kiểm tra mã có tồn tại không
+router.get("/discounts/check-code/:code", discountController.checkDiscountCodeExists);
+
 // GET /api/admin/discounts/:id - Lấy discount theo ID
 router.get("/discounts/:id", discountController.getDiscountById);
 
