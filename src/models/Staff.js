@@ -25,6 +25,8 @@ const staffSchema = new mongoose.Schema(
       viewPatientInfo: { type: Boolean, default: false }, // xem thông tin bệnh nhân
       editOwnProfile: { type: Boolean, default: false }, // chỉnh sửa hồ sơ cá nhân
       createInvoice: { type: Boolean, default: false }, // tạo hóa đơn
+      viewInvoice: { type: Boolean, default: false }, 
+      editInvoice: { type: Boolean, default: false },
 
       editPatientInfo: { type: Boolean, default: false }, 
 

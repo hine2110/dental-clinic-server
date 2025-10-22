@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 
-// Cấu hình email (sử dụng gmail)
+// Email configuration (using Gmail)
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// === TEMPLATE EMAIL CHUNG ===
+// === GENERIC EMAIL TEMPLATE ===
 const createEmailTemplate = (title, content) => `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
     <div style="background-color: #1977cc; color: white; padding: 20px; text-align: center;">
@@ -19,7 +19,7 @@ const createEmailTemplate = (title, content) => `
       ${content}
     </div>
     <div style="background-color: #f1f1f1; color: #555; padding: 15px 30px; text-align: center; font-size: 12px;">
-      <p style="margin: 0;">Đây là email tự động, vui lòng không trả lời.</p>
+      <p style="margin: 0;">This is an automated email, please do not reply.</p>
       <p style="margin: 5px 0;">BeautySmile Clinic | Hotline: +84 935 655 266 | Email: hotro@beautysmile.com</p>
     </div>
   </div>
@@ -41,24 +41,24 @@ const sendEmail = async ({ to, subject, html, title }) => {
     }
 };
 
-// Gửi mã xác thực
+// Send verification code
 const sendVerificationCode = async (email, code) => {
     try {
-        const title = "Xác thực tài khoản";
+        const title = "Account Verification";
         const content = `
-          <p>Xin chào,</p>
-          <p>Cảm ơn bạn đã đăng ký tài khoản tại BeautySmile Clinic. Vui lòng sử dụng mã xác thực sau để hoàn tất đăng ký:</p>
+          <p>Hello,</p>
+          <p>Thank you for registering an account at BeautySmile Clinic. Please use the following verification code to complete your registration:</p>
           <div style="background-color: #f8f9fa; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; border-left: 4px solid #1977cc;">
             <h2 style="color: #1977cc; font-size: 32px; margin: 0; letter-spacing: 4px;">${code}</h2>
           </div>
-          <p>Mã này có hiệu lực trong 10 phút.</p>
-          <p>Trân trọng,<br><strong>Đội ngũ BeautySmile Clinic</strong></p>
+          <p>This code is valid for 10 minutes.</p>
+          <p>Regards,<br><strong>The BeautySmile Clinic Team</strong></p>
         `;
 
         const mailOptions = {
             from: `"BeautySmile Clinic" <${process.env.EMAIL_USER}>`,
             to: email,
-            subject: 'Mã xác thực tài khoản - BeautySmile Clinic',
+            subject: 'Account Verification Code - BeautySmile Clinic',
             html: createEmailTemplate(title, content)
         };
         await transporter.sendMail(mailOptions);
@@ -69,25 +69,25 @@ const sendVerificationCode = async (email, code) => {
     }
 };
 
-// Gửi mail reset password 
+// Send password reset email 
 const sendPasswordResetEmail = async (email, resetToken) => {
     try {
         const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${resetToken}`;
-        const title = "Yêu cầu đặt lại mật khẩu";
+        const title = "Password Reset Request";
         const content = `
-          <p>Xin chào,</p>
-          <p>Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Vui lòng nhấn vào nút bên dưới để tạo mật khẩu mới:</p>
+          <p>Hello,</p>
+          <p>We received a request to reset the password for your account. Please click the button below to create a new password:</p>
           <div style="text-align: center; margin: 25px 0;">
-            <a href="${resetUrl}" style="background-color: #1977cc; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 16px;">Đặt lại mật khẩu</a>
+            <a href="${resetUrl}" style="background-color: #1977cc; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 16px;">Reset Password</a>
           </div>
-          <p>Link này có hiệu lực trong 1 giờ. Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
-          <p>Trân trọng,<br><strong>Đội ngũ BeautySmile Clinic</strong></p>
+          <p>This link is valid for 1 hour. If you did not request a password reset, please ignore this email.</p>
+          <p>Regards,<br><strong>The BeautySmile Clinic Team</strong></p>
         `;
 
         const mailOptions = {
             from: `"BeautySmile Clinic" <${process.env.EMAIL_USER}>`,
             to: email,
-            subject: 'Yêu cầu đặt lại mật khẩu - BeautySmile Clinic',
+            subject: 'Password Reset Request - BeautySmile Clinic',
             html: createEmailTemplate(title, content)
         };
         await transporter.sendMail(mailOptions);
@@ -98,29 +98,37 @@ const sendPasswordResetEmail = async (email, resetToken) => {
     }
 };
 
-// Gửi email xác nhận lịch hẹn
+// Send appointment confirmation email
 const sendAppointmentConfirmationEmail = async (appointmentDetails) => {
     try {
         const { patientEmail, patientName, doctorName, appointmentDate, startTime, locationName = 'BeautySmile Clinic' } = appointmentDetails;
-        const title = "Lịch hẹn đã được xác nhận";
+        
+        // Format date to a more readable English format (e.g., "October 21, 2025")
+        const formattedDate = new Date(appointmentDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        
+        const title = "Appointment Confirmed";
         const content = `
-          <p>Xin chào <strong>${patientName}</strong>,</p>
-          <p>BeautySmile Clinic xin xác nhận bạn đã đặt cọc và đặt lịch hẹn thành công. Dưới đây là thông tin chi tiết về lịch hẹn của bạn:</p>
+          <p>Hello <strong>${patientName}</strong>,</p>
+          <p>BeautySmile Clinic confirms that you have successfully booked your appointment. Here are the details of your appointment:</p>
           <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #1977cc;">
-            <p style="margin: 8px 0;"><strong>Bác sĩ:</strong> ${doctorName}</p>
-            <p style="margin: 8px 0;"><strong>Ngày:</strong> ${new Date(appointmentDate).toLocaleDateString('vi-VN')}</p>
-            <p style="margin: 8px 0;"><strong>Giờ:</strong> ${startTime}</p>
-            <p style="margin: 8px 0;"><strong>Địa điểm:</strong> ${locationName}</p>
+            <p style="margin: 8px 0;"><strong>Doctor:</strong> ${doctorName}</p>
+            <p style="margin: 8px 0;"><strong>Date:</strong> ${formattedDate}</p>
+            <p style="margin: 8px 0;"><strong>Time:</strong> ${startTime}</p>
+            <p style="margin: 8px 0;"><strong>Location:</strong> ${locationName}</p>
           </div>
-          <p>Vui lòng đến trước giờ hẹn 10-15 phút để làm thủ tục. Nếu bạn cần thay đổi lịch, vui lòng liên hệ với chúng tôi.</p>
-          <p>Cảm ơn bạn đã tin tưởng và lựa chọn dịch vụ của chúng tôi!</p>
-          <p>Trân trọng,<br><strong>Đội ngũ BeautySmile Clinic</strong></p>
+          <p>Please arrive 10-15 minutes before your appointment time for check-in. If you need to reschedule, please contact us.</p>
+          <p>Thank you for choosing our services!</p>
+          <p>Regards,<br><strong>The BeautySmile Clinic Team</strong></p>
         `;
 
         const mailOptions = {
             from: `"BeautySmile Clinic" <${process.env.EMAIL_USER}>`,
             to: patientEmail,
-            subject: 'Xác nhận Lịch hẹn tại BeautySmile Clinic',
+            subject: 'Appointment Confirmation - BeautySmile Clinic',
             html: createEmailTemplate(title, content)
         };
         await transporter.sendMail(mailOptions);

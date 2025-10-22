@@ -53,6 +53,8 @@ dist/
 src/uploads/*
 !src/uploads/.gitkeep
 
+uploads/
+!uploads/.gitkeep
 # Temporary files
 tmp/
 temp/

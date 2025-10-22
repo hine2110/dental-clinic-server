@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const Doctor = require("../models/Doctor");
 const DoctorSchedule = require("../models/DoctorSchedule");
-
+const Discount = require("../models/Discount");
 const StaffSchedule = require("../models/StaffSchedule");
 const Location = require("../models/Location");
 const Appointment = require("../models/Appointment");
@@ -12,12 +12,10 @@ const Prescription = require("../models/Prescription");
 const Medicine = require("../models/Medicine");
 const Invoice = require("../models/Invoice");
 
+const BANK_ID = "970422"; // Đây là BIN của MBBank. Tra cứu BIN ngân hàng của bạn
+const ACCOUNT_NUMBER = "0935655266"; // Thay bằng STK thật của bạn
+const ACCOUNT_NAME = "NGUYEN TRAN GIA HUY"; // Tên chủ tài khoản
 // ==================== RECEPTIONIST FUNCTIONS ====================
-
-
-
-
-
 
 // 5. Xem danh sách lịch hẹn 
 const getAppointments = async (req, res) => {
@@ -121,132 +119,391 @@ const viewPrescriptions = async (req, res) => {
  * Có thể lựa chọn bao gồm thuốc hoặc không.
  * Nếu bao gồm thuốc, sẽ tự động xuất thuốc và trừ tồn kho.
  */
-const createInvoice = async (req, res) => {
+// (HÀM MỚI) 1. Lấy danh sách bệnh nhân "Chờ thanh toán"
+const getPaymentQueue = async (req, res) => {
   try {
-    const staffId = req.staff._id;
-    // Lấy prescriptionId và lựa chọn có bao gồm thuốc hay không từ body
-    const { prescriptionId, includeMedicines = false, paymentMethod = "cash" } = req.body;
+    // *** LƯU Ý: Thay "completed" bằng "complex" nếu đó là status của bạn ***
+    const appointmentsToPay = await Appointment.find({
+      status: "completed", // <-- HOẶC "complex"
+      paymentStatus: "paid",
+    })
+    .populate({
+      path: "patient",
+      select: "basicInfo.fullName contactInfo.phone", 
+    })
+    .populate({
+      path: "doctor",
+      select: "user",
+      populate: { path: "user", select: "fullName" } 
+    })
+    .sort({ updatedAt: -1 }); // Ưu tiên các cuộc hẹn vừa xong
 
-    if (!prescriptionId) {
-      return res.status(400).json({ success: false, message: "Vui lòng cung cấp ID đơn thuốc (prescriptionId)" });
-    }
-
-    // 1. Lấy thông tin đơn thuốc chi tiết
-    // Tìm kiếm theo _id (ObjectId)
-    const prescription = await Prescription.findById(prescriptionId)
-      .populate("patient", "user basicInfo")
-      .populate("services", "name price")
-      .populate({
-        path: 'medications.medicine',
-        model: 'Medicine',
-        select: 'name price'
-      });
-
-    if (!prescription) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy đơn thuốc" });
-    }
-    
-    // Kiểm tra các thông tin cần thiết
-    if (!prescription.patient) {
-      return res.status(400).json({ success: false, message: "Đơn thuốc không có thông tin bệnh nhân" });
-    }
-    
-    if (!prescription.appointment) {
-      return res.status(400).json({ success: false, message: "Đơn thuốc không có thông tin lịch hẹn" });
-    }
-    
-    // An toàn hơn là kiểm tra trạng thái, ví dụ không cho tạo hóa đơn lần 2
-    if (prescription.status === 'completed') {
-        return res.status(409).json({ success: false, message: `Đơn thuốc này đã được xử lý (trạng thái: ${prescription.status})` });
-    }
-
-    // 2. Tính tổng tiền dịch vụ (luôn luôn tính)
-    const totalServices = Array.isArray(prescription.services)
-      ? prescription.services.reduce((sum, s) => sum + (s?.price || 0), 0)
-      : 0;
-
-    let totalMedicines = 0;
-
-    // 3. Xử lý thuốc nếu có yêu cầu
-    if (includeMedicines) {
-      if (!prescription.medications || prescription.medications.length === 0) {
-        return res.status(400).json({ success: false, message: "Đơn thuốc không có thuốc để xuất." });
-      }
-
-      // Vòng lặp qua từng loại thuốc trong đơn để trừ tồn kho
-      for (const item of prescription.medications) {
-        const medicine = item.medicine;
-        const quantityToDispense = item.quantity;
-        
-        if (!medicine || quantityToDispense <= 0) {
-            throw new Error("Thông tin thuốc trong đơn không hợp lệ.");
-        }
-        
-        if (!medicine._id) {
-            throw new Error(`Thuốc "${medicine.name || 'Unknown'}" không có ID hợp lệ.`);
-        }
-        
-        // Trừ tồn kho một cách an toàn (atomic operation)
-        const updatedMed = await Medicine.findOneAndUpdate(
-          { _id: medicine._id, currentStock: { $gte: quantityToDispense } },
-          { $inc: { currentStock: -quantityToDispense } },
-          { new: true }
-        );
-
-        if (!updatedMed) {
-          throw new Error(`Thuốc "${medicine.name}" không đủ tồn kho hoặc không tồn tại.`);
-        }
-        
-        // Tính tiền thuốc (không lưu lịch sử xuất thuốc)
-        const medicineTotalPrice = quantityToDispense * medicine.price;
-        totalMedicines += medicineTotalPrice;
-      }
-    }
-
-    // 4. Tính tổng hóa đơn cuối cùng
-    const finalTotalPrice = totalServices + totalMedicines;
-    if (finalTotalPrice <= 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Tổng tiền hóa đơn phải lớn hơn 0" 
-      });
-    }
-    // 5. Tạo hóa đơn
-    const invoiceCount = await Invoice.countDocuments();
-    const invoiceId = `INV${String(invoiceCount + 1).padStart(6, '0')}`;
-    const newInvoice = new Invoice({
-      invoiceId,
-      appointment: prescription.appointment,
-      staff: staffId,
-      patient: prescription.patient._id,
-      total: finalTotalPrice,
-      paymentMethod
+    res.status(200).json({
+      success: true,
+      data: appointmentsToPay,
     });
-    await newInvoice.save();
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
+  }
+};
 
-    // 6. Cập nhật trạng thái đơn thuốc để tránh xử lý lại
-    prescription.status = includeMedicines ? 'completed' : 'invoiced'; // 'completed' nếu xuất thuốc, 'invoiced' nếu chỉ HĐ dịch vụ
-    await prescription.save();
+// (HÀM MỚI) 2. Lấy tất cả dịch vụ để nhân viên chọn
+const getServicesForBilling = async (req, res) => {
+  try {
+    const services = await Service.find({ isActive: true }).select("name price category");
+    res.status(200).json({
+      success: true,
+      data: services,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
+  }
+};
+const generateInvoiceId = () => {
+  // Tạo một mã ngắn, ngẫu nhiên, ví dụ: INV-AB12XY
+  const randomPart = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `INV-${Date.now().toString().slice(-4)}-${randomPart}`;
+};
 
+// (HÀM MỚI - THAY THẾ createInvoice CŨ) 3. Bắt đầu phiên thanh toán (Tạo hóa đơn PENDING)
+const createDraftInvoice = async (req, res) => {
+  const { appointmentId } = req.body;
+  // Sử dụng req.staff._id như trong code cũ của bạn
+  const staffId = req.staff._id; 
 
-    // 8. Trả về kết quả thành công
+  try {
+    // 1. Kiểm tra xem hóa đơn đã tồn tại cho cuộc hẹn này chưa
+    let invoice = await Invoice.findOne({ appointment: appointmentId });
+
+    if (invoice) {
+      if (invoice.status === "PENDING") {
+        return res.status(200).json({
+          success: true,
+          message: "Hóa đơn nháp đã tồn tại.",
+          data: await invoice.populate('items.item'),
+        });
+      }
+      if (invoice.status === "PAID") {
+        return res.status(400).json({ success: false, message: "Hóa đơn này đã được thanh toán." });
+      }
+    }
+
+    // 2. Nếu chưa có, tạo hóa đơn mới
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy cuộc hẹn." });
+    }
+
+    invoice = new Invoice({
+      invoiceId: generateInvoiceId(),
+      appointment: appointmentId,
+      patient: appointment.patient,
+      staff: staffId,
+      status: "PENDING",
+      items: [], // Giỏ hàng trống
+    });
+
+    await invoice.save();
+
     res.status(201).json({
       success: true,
-      message: "Tạo hóa đơn thành công!",
+      message: "Đã tạo hóa đơn nháp thành công.",
+      data: invoice,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
+  }
+};
+
+// (HÀM MỚI) 4. Cập nhật "Giỏ hàng" (Thêm/Sửa/Xóa dịch vụ)
+const updateInvoiceItems = async (req, res) => {
+  const { invoiceId } = req.params;
+  const { items } = req.body; // items là một mảng: [{ itemId: 'serviceId1', quantity: 2 }, ...]
+
+  try {
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy hóa đơn." });
+    }
+    if (invoice.status === "PAID") {
+      return res.status(400).json({ success: false, message: "Không thể cập nhật hóa đơn đã thanh toán." });
+    }
+
+    const updatedItems = [];
+    for (const item of items) {
+      const service = await Service.findById(item.itemId);
+      if (service) {
+        updatedItems.push({
+          item: service._id,
+          quantity: item.quantity,
+          priceAtPayment: service.price, // Lấy giá gốc từ DB
+          nameAtPayment: service.name,   // Lấy tên gốc từ DB
+        });
+      }
+    }
+
+    invoice.items = updatedItems;
+    await invoice.save(); // pre('save') hook sẽ tự động tính lại totalAmount
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật giỏ hàng thành công.",
+      data: await invoice.populate('items.item'),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
+  }
+};
+
+
+// (HÀM MỚI) 5. Hoàn tất thanh toán
+// (HÀM MỚI) 5. Hoàn tất thanh toán (ĐÃ CẬP NHẬT HOÀN CHỈNH)
+const finalizePayment = async (req, res) => {
+  const { invoiceId } = req.params;
+  
+  // 1. Lấy TẤT CẢ dữ liệu từ frontend
+  const { 
+    paymentMethod, 
+    amountGiven, 
+    discountCode, 
+    originalTotal, // = totalAmount from items
+    finalTotal      // = finalAmount (total - discount)
+  } = req.body; 
+
+  try {
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy hóa đơn." });
+    }
+    if (invoice.status === "PAID") {
+      return res.status(400).json({ success: false, message: "Hóa đơn này đã được thanh toán." });
+    }
+
+    let calculatedDiscountAmount = 0;
+    let calculatedFinalTotal = invoice.totalAmount; // totalAmount là tiền gốc
+
+    // 2. Xác thực lại discount (BẮT BUỘC VÌ BẢO MẬT)
+    if (discountCode) {
+      // (Bạn phải import Discount model ở đầu file)
+      const discount = await Discount.findOne({ code: discountCode, isActive: true });
+      if (discount) {
+        // (Thêm kiểm tra ngày hết hạn, lượt dùng... nếu cần)
+        // if (discount.endDate && discount.endDate < Date.now()) {
+        //    return res.status(400).json({ success: false, message: "Mã giảm giá đã hết hạn (lỗi server)." });
+        // }
+
+        // Tính toán lại discount dựa trên tiền gốc trong DB
+        calculatedDiscountAmount = (invoice.totalAmount * discount.discountPercentage) / 100;
+        calculatedFinalTotal = invoice.totalAmount - calculatedDiscountAmount;
+
+        // So sánh với số frontend gửi lên, nếu sai (do làm tròn) thì báo lỗi
+        if (Math.abs(calculatedFinalTotal - finalTotal) > 1) { // Chênh lệch 1đ
+          return res.status(400).json({ 
+            success: false, 
+            message: `Tính toán giảm giá phía server (ra ${calculatedFinalTotal}) không khớp với client (gửi ${finalTotal}). Vui lòng F5 thử lại.`
+          });
+        }
+        
+        // Gán vào hóa đơn để lưu
+        invoice.discountCode = discount.code;
+        invoice.discountAmount = calculatedDiscountAmount;
+
+        // (TùY CHỌN: Tăng lượt sử dụng mã)
+        // discount.usageCount += 1;
+        // await discount.save();
+
+      } else {
+         return res.status(400).json({ success: false, message: "Mã giảm giá không hợp lệ (lỗi server)." });
+      }
+    }
+
+    let change = 0; // Tiền thối
+
+    // 3. DÙNG "calculatedFinalTotal" (đã xác thực) để kiểm tra tiền mặt
+    if (paymentMethod === 'cash') {
+      const given = parseFloat(amountGiven);
+      // === LỖI CŨ CỦA BẠN LÀ Ở ĐÂY ===
+      if (isNaN(given) || given < calculatedFinalTotal) { // <-- ĐÃ SỬA
+        return res.status(400).json({ 
+          success: false, 
+          // Trả về số tiền đúng
+          message: `Số tiền khách đưa không đủ. Cần ít nhất ${calculatedFinalTotal.toLocaleString('vi-VN')}đ.`
+        });
+      }
+      change = given - calculatedFinalTotal; // Logic tính tiền thối
+    }
+
+    // 4. Cập nhật hóa đơn
+    invoice.status = "PAID";
+    invoice.paymentMethod = paymentMethod;
+    invoice.invoiceDate = Date.now();
+    // Gán finalAmount (hook pre-save cũng sẽ tính, nhưng gán đè cho chắc)
+    invoice.finalAmount = calculatedFinalTotal; 
+    await invoice.save();
+
+    // 5. Cập nhật trạng thái của Cuộc hẹn
+    await Appointment.findByIdAndUpdate(invoice.appointment, {
+      paymentStatus: "service payment", // (Trạng thái bạn định nghĩa)
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Thanh toán thành công!",
       data: {
-        invoice: newInvoice,
-        totalServices,
-        totalMedicines,
-        finalTotalPrice
+        invoice,
+        change, // Trả về tiền thối
       },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
+  }
+};
+
+const applyDiscountCode = async (req, res) => {
+  const { code, currentTotal } = req.body;
+  // const { invoiceId } = req.params; // Lấy invoiceId nếu bạn cần nó
+
+  if (!code) {
+    return res.status(400).json({ success: false, message: "Vui lòng nhập mã giảm giá." });
+  }
+
+  try {
+    // 1. Tìm mã code, đảm bảo là chữ hoa
+    const discount = await Discount.findOne({ code: code.toUpperCase() });
+
+    // 2. Kiểm tra không tồn tại
+    if (!discount) {
+      return res.status(404).json({ success: false, message: "Mã giảm giá không tồn tại." });
+    }
+
+    // 3. Kiểm tra mã có hoạt động không
+    if (!discount.isActive) {
+      return res.status(400).json({ success: false, message: "Mã giảm giá này đã bị vô hiệu hóa." });
+    }
+
+    // 4. Kiểm tra ngày bắt đầu
+    if (discount.startDate && discount.startDate > Date.now()) {
+      return res.status(400).json({ success: false, message: "Mã giảm giá này chưa đến ngày sử dụng." });
+    }
+
+    // 5. Kiểm tra ngày hết hạn
+    if (discount.endDate && discount.endDate < Date.now()) {
+      return res.status(400).json({ success: false, message: "Mã giảm giá đã hết hạn." });
+    }
+
+    // 6. Kiểm tra lượt sử dụng (nếu có giới hạn)
+    if (discount.maxUsage !== null && discount.usageCount >= discount.maxUsage) {
+      return res.status(400).json({ success: false, message: "Mã giảm giá đã hết lượt sử dụng." });
+    }
+
+    // 7. Mọi thứ hợp lệ -> Tính toán số tiền
+    const discountAmount = (currentTotal * discount.discountPercentage) / 100;
+
+    // 8. Trả về thông tin cho frontend
+    res.status(200).json({
+      success: true,
+      data: {
+        code: discount.code,
+        discountAmount: Math.round(discountAmount), // Làm tròn tiền
+        percentage: discount.discountPercentage
+      }
     });
 
   } catch (error) {
-    // Nếu có lỗi (ví dụ: hết thuốc), mọi thứ sẽ dừng lại và trả về lỗi
+    res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
+  }
+};
+
+// (HÀM MỚI) Lấy lịch sử hóa đơn đã thanh toán
+const getInvoiceHistory = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const { startDate, endDate, paymentMethod, q } = req.query;
+
+    let query = { status: "PAID" };
+
+    if (startDate && endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      query.invoiceDate = { 
+        $gte: new Date(startDate), 
+        $lte: endOfDay 
+      };
+    }
+    // Sửa logic: Chỉ thêm filter nếu nó không phải 'all'
+    if (paymentMethod && paymentMethod !== 'all') {
+      query.paymentMethod = paymentMethod;
+    }
+    
+    if (q) {
+      // Logic tìm kiếm bệnh nhân (bạn đã có)
+      const patients = await Patient.find({ 'basicInfo.fullName': { $regex: q, $options: 'i' } }).select('_id');
+      const patientIds = patients.map(p => p._id);
+      
+      query.$or = [
+        { invoiceId: { $regex: q, $options: 'i' } },
+        { patient: { $in: patientIds } }
+      ];
+    }
+
+    // --- BẮT ĐẦU NÂNG CẤP ---
+    // Chạy 3 tác vụ song song sau khi đã có query
+    const [
+      invoices, 
+      totalInvoices,
+      revenueResult
+    ] = await Promise.all([
+      // 1. Lấy danh sách phân trang
+      Invoice.find(query)
+        .populate({ 
+          path: 'patient',
+          select: 'basicInfo.fullName'
+        })
+        .sort({ invoiceDate: -1 })
+        .skip(skip)
+        .limit(limit),
+      // 2. Đếm tổng số văn bản
+      Invoice.countDocuments(query),
+      // 3. (MỚI) Tính tổng doanh thu
+      Invoice.aggregate([
+        { $match: query },
+        { 
+          $group: { 
+            _id: null, 
+            totalRevenue: { $sum: "$finalAmount" } //
+          } 
+        }
+      ])
+    ]);
+    
+    // Lấy kết quả từ aggregate
+    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].totalRevenue : 0;
+    const totalPages = Math.ceil(totalInvoices / limit);
+    // --- KẾT THÚC NÂNG CẤP ---
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy lịch sử hóa đơn thành công",
+      data: invoices,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalInvoices: totalInvoices
+      },
+      // (MỚI) Trả về đối tượng summary
+      summary: {
+        totalRevenue: totalRevenue
+      }
+    });
+
+  } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Lỗi khi tạo hóa đơn",
-      error: error.message,
+      message: "Lỗi khi lấy lịch sử hóa đơn",
+      error: error.message
     });
   }
 };
@@ -287,6 +544,43 @@ const viewReceptionistSchedule = async (req, res) => {
       message: "Lỗi khi lấy lịch làm việc của receptionist",
       error: error.message
     });
+  }
+};
+
+const generateTransferQrCode = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    const invoice = await Invoice.findById(invoiceId);
+
+    if (!invoice || invoice.status === 'PAID') {
+      return res.status(404).json({ success: false, message: "Hóa đơn không hợp lệ hoặc đã thanh toán." });
+    }
+
+    // 1. Lấy số tiền cuối cùng (finalAmount đã trừ discount)
+    const amount = invoice.finalAmount; 
+    if (amount <= 0) {
+      return res.status(400).json({ success: false, message: "Hóa đơn không có chi phí." });
+    }
+
+    // 2. Tạo nội dung memo duy nhất
+    const memo = `PAY ${invoice._id.toString().slice(-6).toUpperCase()}`;
+
+    // 3. Tạo link ảnh QR (Sử dụng dịch vụ VietQR)
+    // Link này khi được gọi sẽ trả về một ảnh PNG
+    const qrCodeUrl = `https://api.vietqr.io/image/${BANK_ID}-${ACCOUNT_NUMBER}-compact.png?amount=${amount}&addInfo=${encodeURIComponent(memo)}&accountName=${encodeURIComponent(ACCOUNT_NAME)}`;
+
+    // 4. Trả về link ảnh và thông tin cho FE
+    res.status(200).json({
+      success: true,
+      data: {
+        qrCodeUrl: qrCodeUrl, // FE sẽ dùng link này cho <img> src
+        memo: memo, // FE hiển thị nội dung này cho khách
+        amount: amount
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi máy chủ khi tạo QR: " + error.message });
   }
 };
 
@@ -451,8 +745,15 @@ module.exports = {
   viewPatientInfo,
   getAppointments,
   editOwnProfile,
-  createInvoice,
   viewPrescriptions,
   updateAppointmentStatus,
-  generateRescheduleLink
+  generateRescheduleLink,
+  getPaymentQueue,
+  getServicesForBilling,
+  createDraftInvoice,
+  updateInvoiceItems,
+  finalizePayment,
+  applyDiscountCode,
+  generateTransferQrCode,
+  getInvoiceHistory
 };
