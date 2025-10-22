@@ -13,35 +13,60 @@ const appointmentSchema = new mongoose.Schema(
     endTime: { type: String },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "checked-in", "on-hold", "in-progress", "waiting-for-results", "cancelled", "completed", "no-show"],
+      enum: ["pending", "confirmed", "checked-in", "on-hold", "in-progress", "waiting-for-results", "in-treatment", "cancelled", "completed", "no-show"],
       default: "pending",
     },
 
     reasonForVisit: { type: String, trim: true },
     diagnosis: { type: String, trim: true },
     
-    // Medical examination fields
+    // Step 1: Clinical Examination
+    chiefComplaint: { type: String },
+    medicalHistory: { type: String },
     physicalExamination: {
       vitalSigns: { type: String },
       generalAppearance: { type: String },
       oralExamination: { type: String },
+      occlusionExamination: { type: String },
       otherFindings: { type: String }
     },
     
+    // Step 2: Paraclinical Tests
     labTests: [{ type: String }],
     imagingTests: [{ type: String }],
     testInstructions: { type: String },
-    testResults: { type: String },
-    reExaminationFindings: { type: String },
     
+    // Step 3: Diagnosis
+    imagingResults: { type: String },
+    labResults: { type: String },
+    testResults: { type: String },
     preliminaryDiagnosis: { type: String },
     differentialDiagnosis: { type: String },
     finalDiagnosis: { type: String },
+    prognosis: { type: String },
     
+    // Step 4: Treatment & Services
+    selectedServices: [{ type: mongoose.Schema.Types.ObjectId, ref: "Service" }],
+    treatmentNotes: { type: String },
     treatment: { type: String },
     procedures: [{ type: String }],
+    homeCare: { type: String },
+    
+    // Step 5: Prescription & Follow-up
+    prescriptions: [{
+      medicine: { type: String },
+      dosage: { type: String },
+      frequency: { type: String },
+      duration: { type: String },
+      instructions: { type: String }
+    }],
     followUpDate: { type: Date },
+    followUpType: { type: String },
     followUpInstructions: { type: String },
+    warnings: { type: String },
+    
+    // Legacy fields
+    reExaminationFindings: { type: String },
     totalAmount: { type: Number, default: 0 },
     paymentStatus: {
       type: String,
