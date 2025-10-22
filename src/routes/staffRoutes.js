@@ -3,7 +3,7 @@ const router = express.Router();
 const receptionistController = require("../controllers/receptionistStaffController");
 const storeKepperController = require("../controllers/storeKepperController");
 const { authenticate } = require("../middlewares/auth");
-const { checkStaffRole, checkPermission } = require("../middlewares/staff");
+const { checkStaffRole, checkPermission, checkStaffType } = require("../middlewares/staff");
 
 // Middleware xác thực cho tất cả routes staff
 router.use(authenticate);
@@ -25,12 +25,49 @@ router.get("/receptionist/patients/:patientId",
   receptionistController.viewPatientInfo
 );
 
-// tạo hóa đơn
-router.post("/receptionist/invoices/create",
-  checkPermission("createInvoice"),
-  receptionistController.createInvoice
+// === (PHẦN THANH TOÁN ĐÃ CẬP NHẬT THEO YÊU CẦU) ===
+router.get("/receptionist/payment-queue",
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  receptionistController.getPaymentQueue
 );
 
+// (MỚI) Lấy tất cả dịch vụ để thanh toán
+router.get("/receptionist/billing-services",
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  receptionistController.getServicesForBilling
+);
+
+router.post("/receptionist/invoices/create",
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  receptionistController.createDraftInvoice
+);
+
+// (MỚI) Cập nhật giỏ hàng (thêm/bớt dịch vụ)
+router.put("/receptionist/invoices/:invoiceId/items",
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  receptionistController.updateInvoiceItems
+);
+
+router.post("/receptionist/invoices/:invoiceId/apply-discount",
+  checkStaffType("receptionist"),
+  receptionistController.applyDiscountCode
+);
+
+router.post("/receptionist/invoices/:invoiceId/generate-qr",
+  checkStaffType("receptionist"),
+  receptionistController.generateTransferQrCode
+);
+
+// (MỚI) Hoàn tất thanh toán
+router.post("/receptionist/invoices/:invoiceId/finalize",
+  checkStaffType("receptionist"), 
+  receptionistController.finalizePayment
+);
+
+router.get("/receptionist/invoices/history",
+  checkStaffType("receptionist"), 
+  receptionistController.getInvoiceHistory // <-- Hàm controller mới
+);
 
 // Xem danh sách lịch hẹn (tất cả)
 router.get("/receptionist/appointments",
@@ -110,8 +147,6 @@ router.delete("/store/equipment/:equipmentId",
   checkPermission("deleteEquipment"),
   storeKepperController.deleteEquipment
 );
-
-
 
 // Chỉnh sửa hồ sơ cá nhân (store keeper)
 router.put("/store/profile",
