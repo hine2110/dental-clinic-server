@@ -1,4 +1,5 @@
 const { User, Patient, Doctor } = require("../models");
+const Staff = require("../models/Staff");
 const { generateToken } = require("../middlewares/auth");
 const bcrypt = require("bcryptjs");
 
@@ -61,6 +62,7 @@ const login = async (req, res) => {
 
     // Get additional profile data based on role
     let profileData = {};
+    let staffType = null;
     if (user.role === "doctor") {
       const doctorProfile = await Doctor.findOne({ user: user._id });
       if (doctorProfile) {
@@ -76,6 +78,15 @@ const login = async (req, res) => {
         profileData = {
           patientId: patientProfile.patientId,
           emergencyContact: patientProfile.emergencyContact,
+        };
+      }
+    } else if (user.role === "staff") { // <<< THÊM MỚI: Logic cho 'staff'
+      const staffProfile = await Staff.findOne({ user: user._id });
+      if (staffProfile) {
+        staffType = staffProfile.staffType; // Lấy staffType
+        profileData = {
+          // Bạn có thể thêm các thông tin khác của staff vào đây nếu cần
+          staffId: staffProfile.staffId 
         };
       }
     }
@@ -97,6 +108,7 @@ const login = async (req, res) => {
           phone: user.phone,
           avatar: user.avatar,
           lastLogin: user.lastLogin,
+          staffType: staffType,
         },
         profile: profileData,
       },
@@ -115,6 +127,7 @@ const getMe = async (req, res) => {
     const user = req.user;
 
     let profileData = {};
+    let staffType = null;
     if (user.role === "doctor") {
       const doctorProfile = await Doctor.findOne({ user: user._id });
       if (doctorProfile) {
@@ -136,6 +149,14 @@ const getMe = async (req, res) => {
           dentalHistory: patientProfile.dentalHistory,
         };
       }
+    }else if (user.role === "staff") { // <<< THÊM MỚI: Logic cho 'staff'
+      const staffProfile = await Staff.findOne({ user: user._id });
+      if (staffProfile) {
+        staffType = staffProfile.staffType; // Lấy staffType
+        profileData = {
+          staffId: staffProfile.staffId
+        };
+      }
     }
 
     res.json({
@@ -154,6 +175,7 @@ const getMe = async (req, res) => {
           avatar: user.avatar,
           isActive: user.isActive,
           lastLogin: user.lastLogin,
+          staffType: staffType,
         },
         profile: profileData,
       },

@@ -11,6 +11,7 @@ const Service = require("../models/Service");
 const Prescription = require("../models/Prescription");
 const Medicine = require("../models/Medicine");
 const Invoice = require("../models/Invoice");
+const User = require("../models/User");
 
 const BANK_ID = "970422"; // Đây là BIN của MBBank. Tra cứu BIN ngân hàng của bạn
 const ACCOUNT_NUMBER = "0935655266"; // Thay bằng STK thật của bạn
@@ -619,36 +620,50 @@ const viewPatientInfo = async (req, res) => {
 };
 
 // 8. Chỉnh sửa thông tin cá nhân của receptionist
+
 const editOwnProfile = async (req, res) => {
   try {
-    const staffId = req.staff._id;
-    const { profile } = req.body;
-
-    if (!profile || typeof profile !== 'object') {
-      return res.status(400).json({
-        success: false,
-        message: "Dữ liệu profile không hợp lệ"
-      });
+    const staffId = req.staff._id; // ID từ Staff model
+    const userId = req.user.id;     // ID từ User model (từ middleware 'authenticate')
+    
+    const { profile, phone } = req.body;
+    
+    // 1. Cập nhật Staff model (profile chuyên môn)
+    if (profile && typeof profile === 'object') {
+      await Staff.findByIdAndUpdate(
+        staffId,
+        { $set: { profile } },
+        { runValidators: true }
+      );
     }
 
-    const updated = await Staff.findByIdAndUpdate(
-      staffId,
-      { $set: { profile } },
-      { new: true, runValidators: true }
-    ).populate('user');
-
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy nhân viên"
-      });
+    // 2. Cập nhật User model (thông tin chung)
+    const userDataToUpdate = {};
+    if (phone !== undefined) {
+      userDataToUpdate.phone = phone;
     }
+    if (req.file) { // req.file từ middleware 'upload'
+      userDataToUpdate.avatar = `uploads/${req.file.filename}`;
+    }
+
+    // Chỉ cập nhật User nếu có gì đó để cập nhật
+    if (Object.keys(userDataToUpdate).length > 0) {
+      await User.findByIdAndUpdate(
+        userId,
+        { $set: userDataToUpdate },
+        { new: true, runValidators: true }
+      );
+    }
+
+    // 3. Trả về dữ liệu đã populate
+    const updatedStaffProfile = await Staff.findById(staffId).populate("user");
 
     res.status(200).json({
       success: true,
       message: "Cập nhật hồ sơ cá nhân thành công",
-      data: updated
+      data: updatedStaffProfile
     });
+
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -736,6 +751,30 @@ const generateRescheduleLink = async (req, res) => {
   }
 };
 
+const getOwnProfile = async (req, res) => {
+  try {
+    // req.staff._id được cung cấp bởi middleware
+    const staffProfile = await Staff.findById(req.staff._id)
+      .populate({
+        path: "user",
+        select: "-password -googleId" // Lấy tất cả thông tin User trừ password
+      });
+
+    if (!staffProfile) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy hồ sơ nhân viên." });
+    }
+
+    res.status(200).json({ success: true, data: staffProfile });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy hồ sơ cá nhân.",
+      error: error.message
+    });
+  }
+};
+
 
 
 
@@ -744,6 +783,7 @@ module.exports = {
   viewReceptionistSchedule,
   viewPatientInfo,
   getAppointments,
+  getOwnProfile,
   editOwnProfile,
   viewPrescriptions,
   updateAppointmentStatus,

@@ -6,6 +6,9 @@ const Location = require("../models/Location");
 const EquipmentIssue = require("../models/EquipmentIssue");
 const Invoice = require("../models/Invoice");
 const Notification = require("../models/Notification");
+const Patient = require("../models/Patient");
+const User = require("../models/User");
+
 
 const parseTimeToMinutes = (time) => {
   const [h, m] = time.split(":").map(Number);
@@ -45,7 +48,71 @@ const endOfWeek = (date) => {
 };
 
 // ==================== BUSINESS VALIDATIONS ====================
+const getManagerProfile = async (req, res) => {
+  try {
+    // req.user.id được cung cấp bởi middleware 'authenticate'
+    // Đây chính là _id của User
+    const managerUser = await User.findById(req.user.id)
+                                  .select("-password -googleId"); // Loại bỏ các trường nhạy cảm
 
+    if (!managerUser) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy hồ sơ người dùng." });
+    }
+
+    res.status(200).json({ success: true, data: managerUser });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy hồ sơ quản lý.",
+      error: error.message
+    });
+  }
+};
+
+const updateManagerProfile = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    const updateData = {};
+
+    // 1. Chỉ cập nhật 'phone' nếu nó được gửi lên
+    if (phone !== undefined) {
+      updateData.phone = phone;
+    }
+
+    // 2. Xử lý 'avatar' nếu có tệp được tải lên
+    // req.file được cung cấp bởi middleware 'upload'
+    if (req.file) {
+      // Lưu đường dẫn tương đối để client có thể truy cập
+      // Dựa trên 'upload.js', file được lưu trong 'uploads'
+      updateData.avatar = `uploads/${req.file.filename}`;
+    }
+
+    // 3. Tìm và cập nhật người dùng
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id, // ID từ middleware 'authenticate'
+      { $set: updateData },
+      { new: true, runValidators: true, select: "-password -googleId" } 
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy người dùng để cập nhật." });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật hồ sơ thành công!",
+      data: updatedUser // Trả về dữ liệu người dùng đã cập nhật
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi cập nhật hồ sơ.",
+      error: error.message
+    });
+  }
+};
 // Check daily composition: 1 ngày cần 2 full + 2 part
 const checkDoctorDailyComposition = async (locationId, date) => {
   const targetDate = new Date(date);
@@ -521,16 +588,49 @@ const deleteDoctorSchedule = async (req, res) => {
     const schedule = await DoctorSchedule.findById(scheduleId);
     if (!schedule) return res.status(404).json({ success: false, message: "Không tìm thấy lịch" });
 
-    const locationId = schedule.location;
-    const date = schedule.date;
+    // --- BƯỚC 1: Lưu lại TẤT CẢ thông tin của lịch sắp xóa ---
+    const { doctor, location, date, startTime, endTime, notes, createdBy } = schedule;
+
+    // --- BƯỚC 2: Thực hiện xóa ---
     await schedule.deleteOne();
 
-    const weekly = await validateDoctorWeeklyComposition(locationId, date);
+    // --- BƯỚC 3: Kiểm tra tính hợp lệ SAU KHI XÓA ---
+    const weekly = await validateDoctorWeeklyComposition(location, date);
+    
     if (!weekly.isValid) {
-      return res.status(400).njson({ success: false, message: "Xóa lịch làm vi phạm ràng buộc bác sĩ trong tuần", errors: weekly.errors });
+      // --- BƯỚC 4: ROLLBACK (Tạo lại lịch đã xóa) ---
+      // Nếu việc xóa vi phạm ràng buộc, tạo lại lịch y hệt
+      try {
+        const rollbackSchedule = new DoctorSchedule({
+          doctor: doctor,
+          location: location,
+          date: date,
+          startTime: startTime,
+          endTime: endTime,
+          isAvailable: true, // Giả sử lịch bị xóa là 'isAvailable'
+          notes: notes,
+          createdBy: createdBy
+        });
+        await rollbackSchedule.save();
+      } catch (rollbackError) {
+        // Nếu rollback thất bại thì đây là lỗi 500 nghiêm trọng
+        return res.status(500).json({ 
+          success: false, 
+          message: "Lỗi nghiêm trọng: Xóa lịch gây vi phạm và không thể hoàn tác. Vui lòng tải lại trang.", 
+          error: rollbackError.message 
+        });
+      }
+
+      // --- SỬA LỖI TYPO VÀ TRẢ VỀ LỖI 400 ---
+      // Giờ mới trả về lỗi cho người dùng, sau khi đã rollback an toàn
+      return res.status(400).json({ // <-- Sửa .njson thành .json
+        success: false, 
+        message: "Xóa lịch làm vi phạm ràng buộc bác sĩ trong tuần", 
+        errors: weekly.errors 
+      });
     }
 
-    // Notify doctor about deletion
+    // --- BƯỚC 5: Gửi thông báo (chỉ khi xóa thành công và hợp lệ) ---
     try {
       await Notification.create({
         sender: req.management?._id,
@@ -541,7 +641,7 @@ const deleteDoctorSchedule = async (req, res) => {
         type: "schedule_update",
         relatedData: {
           scheduleType: "doctor",
-          location: locationId,
+          location: location, // Sửa từ locationId
           assignedPerson: schedule.doctor,
           doctorId: schedule.doctor
         }
@@ -764,44 +864,25 @@ const updateStaffSchedule = async (req, res) => {
 const deleteStaffSchedule = async (req, res) => {
   try {
     const { scheduleId } = req.params;
+    
+    // 1. Tìm lịch
     const schedule = await StaffSchedule.findById(scheduleId);
-    if (!schedule) return res.status(404).json({ success: false, message: "Không tìm thấy lịch" });
+    if (!schedule) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy lịch" });
+    }
 
+    // 2. Lấy thông tin cần thiết cho notification (TRƯỚC KHI XÓA)
     const locationId = schedule.location;
     const date = schedule.date;
     const staffId = schedule.staff;
     const start = schedule.startTime;
     const end = schedule.endTime;
+
+    // 3. Thực hiện xóa
     await schedule.deleteOne();
 
-    // Chỉ kiểm tra ràng buộc tuần nếu đây là ca fulltime
-    const isFull = isFulltimeShift(start, end);
-    if (isFull) {
-      const weekly = await validateStaffWeeklyComposition(locationId, date);
-      if (!weekly.isValid) {
-        return res.status(400).json({ success: false, message: "Xóa lịch làm vi phạm ràng buộc staff trong tuần", errors: weekly.errors });
-      }
-    }
 
-    // Notify staff about deletion
-    try {
-      await Notification.create({
-        sender: req.management?._id,
-        recipients: [staffId],
-        recipientModel: "Staff",
-        title: "Hủy lịch làm việc",
-        message: `Lịch ngày ${new Date(date).toLocaleDateString("vi-VN")} (${start} - ${end}) đã bị hủy`,
-        type: "schedule_update",
-        relatedData: {
-          scheduleType: "staff",
-          location: locationId,
-          assignedPerson: staffId
-        }
-      });
-    } catch (notifyErr) {
-      console.error("Notify staff delete schedule error:", notifyErr);
-    }
-
+    // 6. Trả về thành công
     res.status(200).json({ success: true, message: "Xóa lịch staff thành công" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi xóa lịch staff", error: error.message });
@@ -838,14 +919,176 @@ const getAllEquipmentIssues = async (req, res) => {
     const query = {};
     if (status) query.status = status;
     if (severity) query.severity = severity;
-    const issues = await EquipmentIssue.find(query).populate('equipment', 'name category status').populate('reporter', 'user');
+    const issues = await EquipmentIssue.find(query)
+    .populate('equipment', 'name model serialNumber')
+    .populate({ // Lấy thông tin người báo cáo
+      path: 'reporter', 
+      select: 'user staffType', // Thêm staffType nếu cần
+      populate: { path: 'user', select: 'fullName' } 
+    })
+    .sort({ createdAt: -1 });
     res.status(200).json({ success: true, data: issues });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi lấy danh sách sự cố", error: error.message });
   }
 };
 
+const updateEquipmentIssueStatus = async (req, res) => {
+  try {
+    const { issueId } = req.params;
+    const { status } = req.body;
+    
+    // Lấy các status hợp lệ từ Enum của Model
+    const allowedStatuses = EquipmentIssue.schema.path('status').enumValues;
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: `Trạng thái không hợp lệ. Chỉ chấp nhận: ${allowedStatuses.join(', ')}` });
+    }
+
+    // Cập nhật và lấy lại document mới nhất, populate lại
+    const updatedIssue = await EquipmentIssue.findByIdAndUpdate(
+      issueId,
+      { status: status },
+      { new: true, runValidators: true } // runValidators để đảm bảo status hợp lệ
+    ).populate('equipment', 'name')
+     .populate({ 
+        path: 'reporter', 
+        select: 'user', 
+        populate: { path: 'user', select: 'fullName' } 
+      })
+    
+
+    if (!updatedIssue) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy báo cáo sự cố." });
+    }
+
+    // (Tùy chọn) Gửi thông báo cho Store Keeper biết trạng thái đã thay đổi
+    try {
+      if (updatedIssue.reporter) { // Kiểm tra reporter có tồn tại không
+          await Notification.create({
+              sender: req.management?._id, // ID của manager
+              recipients: [updatedIssue.reporter._id], // ID của staff đã báo cáo
+              recipientModel: "Staff",
+              title: "Cập nhật trạng thái sự cố thiết bị",
+              message: `Sự cố bạn báo cáo cho thiết bị "${updatedIssue.equipment?.name || 'N/A'}" đã được chuyển sang trạng thái "${status}".`,
+              type: "equipment_issue_update",
+              relatedData: {
+                  equipmentIssueId: updatedIssue._id,
+                  newStatus: status
+              }
+          });
+      }
+    } catch (notifyErr) {
+        console.error("Lỗi gửi thông báo cập nhật sự cố:", notifyErr);
+        // Không chặn luồng chính nếu gửi thông báo lỗi
+    }
+
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật trạng thái thành công!",
+      data: updatedIssue
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi cập nhật trạng thái sự cố.",
+      error: error.message
+    });
+  }
+};
+
 // ==================== REVENUE ====================
+
+
+const getRevenueStatistics = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const { startDate, endDate, paymentMethod, q } = req.query;
+
+    let query = { status: "PAID" };
+
+    if (startDate && endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      query.invoiceDate = { 
+        $gte: new Date(startDate), 
+        $lte: endOfDay 
+      };
+    }
+
+    if (paymentMethod && paymentMethod !== 'all') {
+      query.paymentMethod = paymentMethod;
+    }
+
+    if (q) {
+      const patients = await Patient.find({ 'basicInfo.fullName': { $regex: q, $options: 'i' } }).select('_id');
+      const patientIds = patients.map(p => p._id);
+
+      query.$or = [
+        { invoiceId: { $regex: q, $options: 'i' } },
+        { patient: { $in: patientIds } }
+      ];
+    }
+
+    const [
+      invoices, 
+      totalInvoices,
+      revenueResult
+    ] = await Promise.all([
+      Invoice.find(query)
+        .populate({ 
+          path: 'patient',
+          select: 'basicInfo.fullName'
+        })
+        .populate({
+          path: 'staff',
+          select: 'user',
+          populate: { path: 'user', select: 'fullName' }
+        })
+        .sort({ invoiceDate: -1 })
+        .skip(skip)
+        .limit(limit),
+      Invoice.countDocuments(query),
+      Invoice.aggregate([
+        { $match: query },
+        { 
+          $group: { 
+            _id: null, 
+            totalRevenue: { $sum: "$finalAmount" } 
+          } 
+        }
+      ])
+    ]);
+
+    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].totalRevenue : 0;
+    const totalPages = Math.ceil(totalInvoices / limit);
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy lịch sử hóa đơn thành công",
+      data: invoices,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalInvoices: totalInvoices
+      },
+      summary: {
+        totalRevenue: totalRevenue
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy lịch sử hóa đơn",
+      error: error.message
+    });
+  }
+};
 const getRevenue = async (req, res) => {
   try {
     const { period = 'week', startDate, endDate } = req.query;
@@ -874,6 +1117,79 @@ const getRevenue = async (req, res) => {
     res.status(200).json({ success: true, data: { period: { start, end }, total: revenueAgg[0]?.total || 0, invoices: revenueAgg[0]?.count || 0 } });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi thống kê doanh thu", error: error.message });
+  }
+};
+
+const getRevenueChartData = async (req, res) => {
+  try {
+    const { startDate, endDate, groupBy = 'day' } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, message: "Thiếu startDate hoặc endDate" });
+    }
+
+    let dateFormat;
+    switch (groupBy) {
+      case 'month':
+        dateFormat = '%Y-%m'; // Nhóm theo Năm-Tháng
+        break;
+      case 'year':
+        dateFormat = '%Y'; // Nhóm theo Năm
+        break;
+      default: // 'day'
+        dateFormat = '%Y-%m-%d'; // Nhóm theo Năm-Tháng-Ngày
+        break;
+    }
+
+    const aggregation = [
+      {
+        // 1. Lọc các hóa đơn đã thanh toán trong khoảng ngày
+        $match: {
+          status: "PAID",
+          invoiceDate: {
+            $gte: new Date(startDate),
+            // Lấy đến cuối ngày endDate
+            $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999)) 
+          }
+        }
+      },
+      {
+        // 2. Nhóm theo ngày (hoặc tháng/năm)
+        $group: {
+          _id: {
+            $dateToString: { 
+              format: dateFormat, 
+              date: "$invoiceDate",
+              timezone: "+07:00" // <-- Quan trọng: Đặt múi giờ VN
+            }
+          },
+          totalRevenue: { $sum: "$finalAmount" }
+        }
+      },
+      {
+        // 3. Sắp xếp theo ngày tăng dần
+        $sort: { _id: 1 }
+      },
+      {
+        // 4. Định dạng lại output cho gọn
+        $project: {
+          _id: 0,
+          date: "$_id", // đổi tên _id thành 'date'
+          revenue: "$totalRevenue" // đổi tên totalRevenue thành 'revenue'
+        }
+      }
+    ];
+
+    const chartData = await Invoice.aggregate(aggregation);
+
+    res.status(200).json({ success: true, data: chartData });
+
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: "Lỗi khi lấy dữ liệu biểu đồ", 
+      error: error.message 
+    });
   }
 };
 
@@ -993,8 +1309,8 @@ const getAllDoctors = async (req, res) => {
   try {
     console.log('getAllDoctors called');
     const doctors = await Doctor.find()
-      .populate('user', 'fullName email phone')
-      .select('doctorId user specializations isActive')
+      .populate('user', 'fullName email phone isActive') // <-- SỬA Ở ĐÂY: Thêm 'isActive'
+      .select('doctorId user specializations') // <-- SỬA Ở ĐÂY: Bỏ 'isActive'
       .sort({ 'user.fullName': 1 });
 
     console.log('Found doctors:', doctors.length);
@@ -1016,12 +1332,11 @@ const getAllDoctors = async (req, res) => {
   }
 };
 
-// Get all staff
 const getAllStaff = async (req, res) => {
   try {
     const staff = await Staff.find()
-      .populate('user', 'fullName email phone')
-      .select('staffId user staffType isActive')
+      .populate('user', 'fullName email phone isActive') // <-- SỬA Ở ĐÂY: Thêm 'isActive' vào populate
+      .select('staffId user staffType') // <-- SỬA Ở ĐÂY: Bỏ 'isActive' khỏi select
       .sort({ 'user.fullName': 1 });
 
     res.status(200).json({
@@ -1061,10 +1376,148 @@ const getAllLocations = async (req, res) => {
   }
 };
 
+const getLocationById = async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    const location = await Location.findById(locationId);
+
+    if (!location) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy cơ sở." });
+    }
+
+    res.status(200).json({ success: true, data: location });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy thông tin cơ sở.",
+      error: error.message
+    });
+  }
+};
+
+const createLocation = async (req, res) => {
+  try {
+    const newLocation = new Location({
+      name: req.body.name,
+      address: req.body.address,
+      phone: req.body.phone,
+      email: req.body.email,
+      isActive: req.body.isActive
+    });
+
+    await newLocation.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Tạo cơ sở mới thành công!",
+      data: newLocation
+    });
+  } catch (error) {
+    // 1. CHECK FOR VALIDATION ERROR
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại các trường bắt buộc.",
+        error: error.message
+      });
+    }
+
+    // 2. ADD THIS BLOCK TO CHECK FOR DUPLICATE KEY ERROR
+    if (error.code === 11000) {
+      return res.status(409).json({ // 409 Conflict is a better status code
+        success: false,
+        message: `Tên cơ sở "${req.body.name}" đã tồn tại. Vui lòng chọn tên khác.`
+      });
+    }
+
+    // 3. FALLBACK FOR OTHER SERVER ERRORS
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server khi tạo cơ sở mới.",
+      error: error.message
+    });
+  }
+};
+const updateLocation = async (req, res) => {
+  try {
+    const { locationId } = req.params; // Vẫn lấy _id từ params
+    const { name, address, phone, email, isActive } = req.body;
+
+    // Tìm và cập nhật trong một bước
+    const updatedLocation = await Location.findByIdAndUpdate(
+      locationId, // Điều kiện tìm kiếm theo _id
+      { name, address, phone, email, isActive }, // Dữ liệu cần cập nhật
+      { 
+        new: true, // Tùy chọn này để trả về document đã được cập nhật
+        runValidators: true // Tùy chọn này để đảm bảo các rule trong schema (như required) được áp dụng
+      }
+    );
+
+    if (!updatedLocation) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy cơ sở." });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật thông tin cơ sở thành công!",
+      data: updatedLocation
+    });
+
+  } catch (error) {
+    // Xử lý lỗi trùng tên (unique) khi cập nhật
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: `Tên cơ sở "${req.body.name}" đã tồn tại.`
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi cập nhật cơ sở.",
+      error: error.message
+    });
+  }
+};
+
+const deleteLocation = async (req, res) => {
+  try {
+    const { locationId } = req.params;
+
+    // Tìm theo _id và cập nhật isActive thành false
+    const location = await Location.findByIdAndUpdate(
+        locationId, 
+        { isActive: false },
+        { new: true }
+    );
+
+    if (!location) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy cơ sở." });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Đã vô hiệu hóa cơ sở "${location.name}" thành công.`
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi xóa cơ sở.",
+      error: error.message
+    });
+  }
+};
 module.exports = {
+  getManagerProfile,
+  updateManagerProfile,
   getAllDoctors,
   getAllStaff,
   getAllLocations,
+  getLocationById,
+  updateLocation,
+  createLocation,
+  deleteLocation,
   getDoctorSchedules,
   getStaffSchedules,
   createDoctorSchedule,
@@ -1123,7 +1576,10 @@ module.exports = {
   getDoctorProfile,
   getStaffProfile,
   getAllEquipmentIssues,
-  getRevenue
+  updateEquipmentIssueStatus,
+  getRevenue,
+  getRevenueStatistics,
+  getRevenueChartData
 };
 
 
