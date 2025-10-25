@@ -12,6 +12,7 @@ const Prescription = require("../models/Prescription");
 const Medicine = require("../models/Medicine");
 const Invoice = require("../models/Invoice");
 const User = require("../models/User");
+const Patient = require("../models/Patient"); // <-- 1. ĐÃ THÊM LẠI IMPORT BỊ THIẾU
 
 const BANK_ID = "970422"; // Đây là BIN của MBBank. Tra cứu BIN ngân hàng của bạn
 const ACCOUNT_NUMBER = "0935655266"; // Thay bằng STK thật của bạn
@@ -21,11 +22,37 @@ const ACCOUNT_NAME = "NGUYEN TRAN GIA HUY"; // Tên chủ tài khoản
 // 5. Xem danh sách lịch hẹn 
 const getAppointments = async (req, res) => {
   try {
+    // === 1. LẤY ID NHÂN VIÊN ===
+    // (Giả định middleware 'checkStaffRole' đã thêm req.staff)
+    const staffId = req.staff._id; 
+
+    // === 2. TÌM TẤT CẢ CƠ SỞ ĐƯỢC PHÂN CÔNG ===
+    // Quét StaffSchedule để xem nhân viên này "thuộc" về những cơ sở nào
+    const staffSchedules = await StaffSchedule.find({ staff: staffId }).select('location');
+    const locationIds = [...new Set(staffSchedules.map(s => s.location.toString()))];
+
+    // Nếu nhân viên không được phân công ở đâu, trả về rỗng
+    if (locationIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Bạn chưa được phân công cho bất kỳ cơ sở nào.",
+        data: [],
+        pagination: { currentPage: 1, totalPages: 0, totalAppointments: 0 }
+      });
+    }
+
+    // === 3. XÂY DỰNG QUERY (ĐÃ THÊM FILTER CƠ SỞ) ===
     const page = parseInt(req.query.page) || 1;
     const limit = 10;
     const skip = (page - 1) * limit;
-    const { status, date, doctorId } = req.query;
+    const { status, date, doctorId, search } = req.query;
+
     let query = {};
+    
+    // THÊM MỚI: Lọc theo cơ sở được phân công
+    query.location = { $in: locationIds }; 
+
+    // (Logic cũ giữ nguyên)
     if (status) {
       query.status = status;
     } 
@@ -44,8 +71,19 @@ const getAppointments = async (req, res) => {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     }
     if (doctorId) query.doctor = doctorId;
+
+    if (search) {
+      const searchTermRegex = new RegExp(search, 'i');
+      const matchingPatients = await Patient.find({ 
+        "basicInfo.fullName": searchTermRegex 
+      }).select('_id');
+      const patientIds = matchingPatients.map(p => p._id);
+      query.patient = { $in: patientIds };
+    }
+    
+    // === 4. THỰC THI QUERY ===
     const [appointments, totalAppointments] = await Promise.all([
-      Appointment.find(query)
+      Appointment.find(query) // Query đã được lọc
         .populate({
           path: 'doctor',
           populate: { path: 'user', select: 'fullName' }
@@ -54,10 +92,11 @@ const getAppointments = async (req, res) => {
           path: 'patient',
           select: 'basicInfo'
         })
+        .populate('location', 'name') // (Tùy chọn) Thêm populate location
         .sort({ appointmentDate: 1, startTime: 1 })
         .skip(skip) 
         .limit(limit), 
-      Appointment.countDocuments(query)
+      Appointment.countDocuments(query) // Đếm query đã lọc
     ]);
     
     const totalPages = Math.ceil(totalAppointments / limit);
@@ -586,7 +625,7 @@ const generateTransferQrCode = async (req, res) => {
 };
 
 // 7. Xem thông tin của bệnh nhân
-const Patient = require("../models/Patient");
+// const Patient = require("../models/Patient"); // <-- 2. ĐÃ XÓA IMPORT THỪA
 const viewPatientInfo = async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -775,7 +814,44 @@ const getOwnProfile = async (req, res) => {
   }
 };
 
+// 3. THÊM LẠI HÀM BỊ MẤT (getMyLocationsForToday)
+/**
+ * Lấy danh sách cơ sở làm việc HÔM NAY của nhân viên.
+ * Dùng cho Socket.io để join room (cho trang Contact).
+ */
+const getMyLocationsForToday = async (req, res) => {
+  try {
+    // req.user._id (từ authenticate) -> find Staff
+    // Hoặc req.staff._id (từ checkStaffRole)
+    const staffId = req.staff._id; // Dùng req.staff._id cho nhất quán
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextDay = new Date(today);
+    nextDay.setDate(today.getDate() + 1);
+
+    const schedules = await StaffSchedule.find({
+      staff: staffId,
+      date: { $gte: today, $lt: nextDay },
+      isAvailable: true
+    }).select('location')
+      .populate('location', 'name'); // Populate tên và ID cơ sở
+
+    // Lọc ra các location duy nhất (phòng trường hợp 1 staff có 2 ca/ngày)
+    const uniqueLocationsMap = new Map();
+    schedules.forEach(s => {
+      if (s.location) {
+        uniqueLocationsMap.set(s.location._id.toString(), s.location);
+      }
+    });
+
+    const locations = Array.from(uniqueLocationsMap.values());
+    
+    res.status(200).json({ success: true, data: locations }); 
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 
 
 
@@ -795,5 +871,6 @@ module.exports = {
   finalizePayment,
   applyDiscountCode,
   generateTransferQrCode,
-  getInvoiceHistory
+  getInvoiceHistory,
+  getMyLocationsForToday // <-- 4. THÊM LẠI VÀO EXPORTS
 };

@@ -11,6 +11,8 @@ const { upload, handleUploadError } = require("../middlewares/upload");
 router.use(authenticate);
 router.use(checkStaffRole);
 
+router.get("/my-locations-today", receptionistController.getMyLocationsForToday);
+
 
 // ==================== RECEPTIONIST ROUTES ====================
 

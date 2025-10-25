@@ -8,7 +8,8 @@ const {
   getAvailableDoctors: getAvailableDoctorsAPI, 
   createAppointment, 
   getPatientAppointments, 
-  cancelAppointment 
+  cancelAppointment,
+  generateSelfRescheduleLink
 } = require('../controllers/patientAppointmentController');
 const { getActiveLocations } = require('../controllers/locationController');
 
@@ -53,4 +54,21 @@ router.get('/appointments', authenticate, getPatientAppointments);
 // DELETE /api/patient/appointments/:appointmentId - Hủy lịch hẹn
 router.delete('/appointments/:appointmentId', authenticate, cancelAppointment);
 
+// POST /api/patient/appointments/:appointmentId/generate-reschedule-link - Tạo link đổi lịch cho bệnh nhân
+router.post(
+  '/appointments/:appointmentId/generate-reschedule-link', authenticate, generateSelfRescheduleLink);
+
+// ==================== RESCHEDULE APPOINTMENTS ====================
+// GET /api/patient/reschedule/verify?token=... - Xác minh token đổi lịch
+router.get(
+  '/reschedule/verify',
+  require('../controllers/patientAppointmentController').verifyRescheduleToken
+);
+
+// POST /api/patient/reschedule/confirm
+// API mới để xác nhận lịch hẹn đã đổi
+router.post(
+  '/reschedule/confirm',
+  require('../controllers/patientAppointmentController').confirmReschedule
+);
 module.exports = router;
