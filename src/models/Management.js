@@ -27,6 +27,7 @@ const managementSchema = new mongoose.Schema(
       deleteStaffSchedule: { type: Boolean, default: false },
 
       viewEquipmentDamageReports: { type: Boolean, default: false },
+      updateEquipmentDamageReports: { type: Boolean, default: false },
 
       // Revenue analytics
       viewRevenueWeekly: { type: Boolean, default: false },
