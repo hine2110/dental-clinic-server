@@ -18,6 +18,8 @@ const Notification = require("./Notification");
 const Management = require("./Management");
 const MedicalRecord = require("./MedicalRecord");
 const Location = require("./Location");
+const ServiceDoctor = require("./ServiceDoctor");
+
 
 module.exports = {
   User,
@@ -29,6 +31,7 @@ module.exports = {
   StaffSchedule,
   Appointment,
   Service,
+  ServiceDoctor,
   Equipment,
   Invoice,
   Prescription,
