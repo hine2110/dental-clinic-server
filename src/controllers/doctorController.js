@@ -160,6 +160,14 @@ const getDoctorAppointments = async (req, res) => {
           select: 'name address'
         }
       })
+      .populate({
+        path: 'selectedServices',
+        select: 'name description price category'
+      })
+      .populate({
+        path: 'testServices',
+        select: 'serviceName price'
+      })
       .sort({ appointmentDate: -1, startTime: 1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -1008,6 +1016,10 @@ const getAppointmentDetails = async (req, res) => {
     .populate({
       path: 'selectedServices',
       select: 'name description price category'
+    })
+    .populate({
+      path: 'testServices',
+      select: 'serviceName price'
     })
     .select('-__v');
 
