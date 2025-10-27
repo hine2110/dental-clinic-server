@@ -32,8 +32,9 @@ const appointmentSchema = new mongoose.Schema(
     },
     
     // Step 2: Paraclinical Tests
-    labTests: [{ type: String }],
-    imagingTests: [{ type: String }],
+    labTests: [{ type: String }], // Legacy field
+    imagingTests: [{ type: String }], // Legacy field
+    testServices: [{ type: mongoose.Schema.Types.ObjectId, ref: "ServiceDoctor" }], // Combined field
     testInstructions: { type: String },
     
     // Step 3: Diagnosis

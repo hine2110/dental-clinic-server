@@ -47,6 +47,8 @@ const {
   getPatientMedicalRecords
 } = require('../controllers/medicalRecordController');
 
+const serviceDoctorController = require('../controllers/serviceDoctorController');
+
 // ==================== MIDDLEWARE ====================
 // Tất cả routes đều yêu cầu authentication và role doctor
 router.use(authenticate);
@@ -182,6 +184,16 @@ router.get('/schedule', getDoctorSchedule);
  * @access  Private (Doctor only)
  */
 router.get('/medicines', getMedicines);
+
+// ==================== SERVICE DOCTORS ====================
+
+/**
+ * @route   GET /api/doctor/service-doctors
+ * @desc    Lấy danh sách dịch vụ xét nghiệm/chẩn đoán cho bác sĩ
+ * @access  Private (Doctor only)
+ * @query   isActive, search
+ */
+router.get('/service-doctors', serviceDoctorController.getAllServiceDoctors);
 
 // ==================== DOCTOR MEDICAL RECORDS ====================
 
