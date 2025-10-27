@@ -27,11 +27,20 @@ const managementSchema = new mongoose.Schema(
       deleteStaffSchedule: { type: Boolean, default: false },
 
       viewEquipmentDamageReports: { type: Boolean, default: false },
+      updateEquipmentDamageReports: { type: Boolean, default: false },
 
       // Revenue analytics
       viewRevenueWeekly: { type: Boolean, default: false },
       viewRevenueMonthly: { type: Boolean, default: false },
       viewRevenueYearly: { type: Boolean, default: false },
+
+      //location
+      getAllLocations: { type: Boolean, default: false },
+      createLocation: { type: Boolean, default: false },
+      updateLocation: { type: Boolean, default: false },
+      deleteLocation: { type: Boolean, default: false },
+      viewLocation: { type: Boolean, default: false },
+      
     },
   },
   { timestamps: true }

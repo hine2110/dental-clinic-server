@@ -4,7 +4,7 @@ const Prescription = require("../models/Prescription");
 const Medicine = require("../models/Medicine");
 const Equipment = require("../models/Equipment");
 const EquipmentIssue = require("../models/EquipmentIssue");
-
+const User = require("../models/User");
 // ==================== STORE KEEPER FUNCTIONS ====================
 
 // 1. Xem lịch làm việc theo storeKepper._id do management tạo
@@ -42,6 +42,29 @@ const viewStoreKepperSchedule = async (req, res) => {
       success: false,
       message: "Lỗi khi lấy lịch làm việc của store keeper",
       error: error.message,
+    });
+  }
+};
+
+const getOwnProfile = async (req, res) => {
+  try {
+    const staffProfile = await Staff.findById(req.staff._id)
+      .populate({
+        path: "user",
+        select: "-password -googleId"
+      });
+
+    if (!staffProfile) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy hồ sơ nhân viên." });
+    }
+
+    res.status(200).json({ success: true, data: staffProfile });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy hồ sơ cá nhân.",
+      error: error.message
     });
   }
 };
@@ -171,6 +194,7 @@ const createEquipment = async (req, res) => {
     await created.save();
     res.status(201).json({ success: true, message: "Tạo thiết bị thành công", data: created });
   } catch (error) {
+    console.error("Lỗi khi tạo thiết bị:", error);
     res.status(500).json({ success: false, message: "Lỗi khi tạo thiết bị", error: error.message });
   }
 };
@@ -211,6 +235,7 @@ const reportEquipment = async (req, res) => {
       return res.status(400).json({ success: false, message: "Thiếu thông tin thiết bị hoặc mô tả lỗi" });
     }
     
+    
     // Tạo EquipmentIssue với MongoDB tự sinh _id
     const issue = new EquipmentIssue({
       equipment: equipmentObjectId,
@@ -227,7 +252,46 @@ const reportEquipment = async (req, res) => {
     await issue.save();
     res.status(201).json({ success: true, message: "Báo cáo thiết bị thành công", data: issue });
   } catch (error) {
+    console.error("!!! LỖI reportEquipment:", error);
     res.status(500).json({ success: false, message: "Lỗi khi báo cáo thiết bị", error: error.message });
+  }
+};
+
+const viewEquipmentIssues = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const query = {};
+    if (status) {
+      query.status = status; // Lọc theo trạng thái (ví dụ: 'reported', 'in_repair')
+    }
+
+    const issues = await EquipmentIssue.find(query)
+      .populate({
+        path: 'equipment',
+        select: 'name model serialNumber' // Lấy thông tin thiết bị
+      })
+      .populate({
+        path: 'reporter',
+        select: 'user', // Lấy thông tin staff đã báo cáo
+        populate: {
+          path: 'user',
+          select: 'fullName' // Lấy tên của staff đó
+        }
+      })
+      .sort({ createdAt: -1 }); // Sắp xếp mới nhất lên đầu
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Lấy danh sách báo cáo sự cố thành công", 
+      data: issues 
+    });
+  } catch (error) {
+    console.error("!!! LỖI viewEquipmentIssues:", error); 
+    res.status(500).json({ 
+      success: false, 
+      message: "Lỗi khi lấy danh sách báo cáo", 
+      error: error.message 
+    });
   }
 };
 
@@ -266,6 +330,8 @@ module.exports = {
   deleteEquipment,
   reportEquipment,
   editOwnProfileStore,
+  viewEquipmentIssues,
+  getOwnProfile
 };
 
 

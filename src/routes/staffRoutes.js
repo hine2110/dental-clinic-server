@@ -4,6 +4,8 @@ const receptionistController = require("../controllers/receptionistStaffControll
 const storeKepperController = require("../controllers/storeKepperController");
 const { authenticate } = require("../middlewares/auth");
 const { checkStaffRole, checkPermission, checkStaffType } = require("../middlewares/staff");
+const { route } = require("./managementRoutes");
+const { upload, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực cho tất cả routes staff
 router.use(authenticate);
@@ -85,9 +87,16 @@ router.post("/receptionist/appointments/:id/generate-reschedule-link",
   receptionistController.generateRescheduleLink
 );
 
+router.get("/receptionist/profile/self",
+  checkPermission("editOwnProfile"), // Dùng chung quyền
+  receptionistController.getOwnProfile
+);
+
 // Chỉnh sửa hồ sơ cá nhân (receptionist)
 router.put("/receptionist/profile",
   checkPermission("editOwnProfile"),
+  upload.single("avatar"), 
+  handleUploadError,
   receptionistController.editOwnProfile
 );
 
@@ -96,61 +105,73 @@ router.put("/receptionist/profile",
 
 // Xem lịch làm việc của store keeper (self)
 router.get("/store/schedules/self",
-  checkPermission("viewStoreKepperSchedule"),
+  checkStaffType("storeKepper"),
   storeKepperController.viewStoreKepperSchedule
 );
 
-// Xem đơn thuốc
-router.get("/store/prescriptions",
-  checkPermission("viewPrescriptions"),
-  storeKepperController.viewPrescriptions
-);
+// // Xem đơn thuốc
+// router.get("/store/prescriptions",
+//   checkPermission("viewPrescriptions"),
+//   storeKepperController.viewPrescriptions
+// );
 
 // INVENTORY - Thuốc
 router.get("/store/inventory",
-  checkPermission("viewInventory"),
+  checkStaffType("storeKepper"),
   storeKepperController.viewInventory
 );
 router.post("/store/inventory",
-  checkPermission("createMedicine"),
+  checkStaffType("storeKepper"),
   storeKepperController.createMedicine
 );
 router.put("/store/inventory/:medicineId",
-  checkPermission("updateMedicine"),
+  checkStaffType("storeKepper"),
   storeKepperController.updateMedicine
 );
 router.delete("/store/inventory/:medicineId",
-  checkPermission("deleteMedicine"),
+  checkStaffType("storeKepper"),
   storeKepperController.deleteMedicine
 );
 
 // EQUIPMENT
 // Báo cáo thiết bị hỏng
 router.post("/store/equipment/issues",
-  checkPermission("reportEquipment"),
+  checkStaffType("storeKepper"),
   storeKepperController.reportEquipment
 );
 
+router.get("/store/equipment/issues",
+  checkStaffType("storeKepper"),
+  storeKepperController.viewEquipmentIssues
+);
+
 router.get("/store/equipment",
-  checkPermission("viewEquipment"),
+  checkStaffType("storeKepper"),
   storeKepperController.viewEquipment
 );
 router.post("/store/equipment",
-  checkPermission("createEquipment"),
+  checkStaffType("storeKepper"),
   storeKepperController.createEquipment
 );
 router.put("/store/equipment/:equipmentId",
-  checkPermission("updateEquipment"),
+  checkStaffType("storeKepper"),
   storeKepperController.updateEquipment
 );
 router.delete("/store/equipment/:equipmentId",
-  checkPermission("deleteEquipment"),
+  checkStaffType("storeKepper"),
   storeKepperController.deleteEquipment
+);
+
+router.get("/store/profile/self",
+  checkStaffType("storeKepper"), // Dùng chung quyền
+  storeKepperController.getOwnProfile
 );
 
 // Chỉnh sửa hồ sơ cá nhân (store keeper)
 router.put("/store/profile",
-  checkPermission("editOwnProfileStore"),
+  checkStaffType("storeKepper"),
+  upload.single("avatar"), 
+  handleUploadError,
   storeKepperController.editOwnProfileStore
 );
 

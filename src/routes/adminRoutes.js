@@ -3,6 +3,9 @@ const router = express.Router();
 const adminController = require("../controllers/adminController");
 const serviceController = require("../controllers/serviceController");
 const discountController = require("../controllers/discountController");
+const scheduleController = require('../controllers/scheduleController');
+const bookingController = require('../controllers/appointmentController');
+const serviceDoctorController = require("../controllers/serviceDoctorController");
 const {
   uploadImage,
   deleteImage,
@@ -109,5 +112,34 @@ router.put("/discounts/:id", discountController.updateDiscount);
 
 // DELETE /api/admin/discounts/:id - Xóa discount
 router.delete("/discounts/:id", discountController.deleteDiscount);
+
+// xem lịch làm
+router.get('/schedules', scheduleController.getSchedules);
+
+// xem lịch sử khám bênh
+router.get('/history/:patientId', bookingController.getPatientMedicalHistory);
+
+
+// ==================== QUẢN LÝ SERVICES DOCTOR ====================
+// GET /api/admin/service-doctors
+router.get("/service-doctors", serviceDoctorController.getAllServiceDoctors);
+
+// POST /api/admin/service-doctors
+router.post("/service-doctors", serviceDoctorController.createServiceDoctor);
+
+// GET /api/admin/service-doctors/:id
+router.get("/service-doctors/:id", serviceDoctorController.getServiceDoctorById);
+
+// PUT /api/admin/service-doctors/:id
+router.put("/service-doctors/:id", serviceDoctorController.updateServiceDoctor);
+
+// DELETE /api/admin/service-doctors/:id (Xoá mềm)
+router.delete("/service-doctors/:id", serviceDoctorController.deleteServiceDoctor);
+
+// PATCH /api/admin/service-doctors/:id/toggle-status
+router.patch("/service-doctors/:id/toggle-status", serviceDoctorController.toggleServiceDoctorStatus);
+
+// DELETE /api/admin/service-doctors/:id/hard-delete (Xoá cứng)
+router.delete("/service-doctors/:id/hard-delete", serviceDoctorController.hardDeleteServiceDoctor);
 
 module.exports = router;

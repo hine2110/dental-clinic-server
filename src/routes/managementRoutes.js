@@ -3,14 +3,25 @@ const router = express.Router();
 const managementController = require("../controllers/managementController");
 const { authenticate } = require("../middlewares/auth");
 const { checkManagementRole, checkManagementPermission } = require("../middlewares/management");
+const { upload, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực và kiểm tra staff
 router.use(authenticate);
 router.use(checkManagementRole);
 
+// GET /api/management/profile - Lấy hồ sơ cá nhân
+router.get("/profile",managementController.getManagerProfile);
+
+// PUT /api/management/profile - Cập nhật hồ sơ cá nhân (phone/avatar)
+router.put("/profile",
+  upload.single("avatar"), // Tên field là 'avatar'
+  handleUploadError,         // Xử lý lỗi upload
+  managementController.updateManagerProfile
+);
+
 // Get all doctors and staff
 router.get("/doctors",
-  // checkManagementPermission("viewDoctorProfile"), // Temporarily disabled for debugging
+  checkManagementPermission("viewDoctorProfile"),
   managementController.getAllDoctors
 );
 
@@ -20,8 +31,28 @@ router.get("/staff",
 );
 
 router.get("/locations",
-  checkManagementPermission("viewStaffProfile"),
+  checkManagementPermission("getAllLocations"),
   managementController.getAllLocations
+);
+
+router.get("/locations/:locationId",
+  checkManagementPermission("viewLocation"), 
+  managementController.getLocationById
+);
+
+router.post("/locations",
+  checkManagementPermission("createLocation"),
+  managementController.createLocation
+);
+
+router.put("/locations/:locationId",
+  checkManagementPermission("updateLocation"),
+  managementController.updateLocation
+);
+
+router.delete("/locations/:locationId",
+  checkManagementPermission("deleteLocation"),
+  managementController.deleteLocation
 );
 
 // Profiles
@@ -82,12 +113,26 @@ router.get("/equipment/issues",
   managementController.getAllEquipmentIssues
 );
 
+router.put("/equipment/issues/:issueId/status",
+  checkManagementPermission("updateEquipmentDamageReports"), // Ví dụ: updateEquipmentIssue
+  managementController.updateEquipmentIssueStatus
+);
+
 // Revenue
 router.get("/revenue",
   checkManagementPermission("viewRevenueWeekly"), // at least one permission required
   managementController.getRevenue
 );
 
+router.get("/revenue/statistics",
+  checkManagementPermission("viewRevenueWeekly"), // at least one permission required
+  managementController.getRevenueStatistics
+);
+
+router.get("/revenue/chart",
+  checkManagementPermission("viewRevenueWeekly"), // at least one permission required
+  managementController.getRevenueChartData
+);
 module.exports = router;
 
 
