@@ -125,13 +125,13 @@ const getDoctorAppointments = async (req, res) => {
 
     let query = { 
       doctor: doctor._id,
-      // Doctor chỉ quản lý các trạng thái: checked-in, on-hold, in-progress, waiting-for-results, in-treatment, completed, no-show, cancelled
-      status: { $in: ['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'completed', 'no-show', 'cancelled'] }
+      // Doctor có thể xem tất cả appointments (bao gồm pending, confirmed)
+      status: { $in: ['pending', 'confirmed', 'checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'completed', 'no-show', 'cancelled'] }
     };
     
     if (status) {
-      // Chỉ cho phép filter theo các trạng thái mà Doctor quản lý
-      if (['checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'completed', 'no-show', 'cancelled'].includes(status)) {
+      // Cho phép filter theo tất cả các trạng thái
+      if (['pending', 'confirmed', 'checked-in', 'on-hold', 'in-progress', 'waiting-for-results', 'in-treatment', 'completed', 'no-show', 'cancelled'].includes(status)) {
         query.status = status;
       }
     }
@@ -1005,6 +1005,10 @@ const getAppointmentDetails = async (req, res) => {
         select: 'fullName email phone'
       }
     })
+    .populate({
+      path: 'selectedServices',
+      select: 'name description price category'
+    })
     .select('-__v');
 
     if (!appointment) {
@@ -1102,6 +1106,93 @@ const updateAppointmentStatus = async (req, res) => {
     });
 
     await appointment.save();
+
+    // ✅ Tự động tạo Medical Record khi hoàn thành khám bệnh
+    if (newStatus === 'completed' && currentStatus !== 'completed') {
+      try {
+        const MedicalRecord = require('../models/MedicalRecord');
+        
+        // Tạo medical record từ appointment data
+        await MedicalRecord.create({
+          patient: appointment.patient,
+          doctor: doctor._id,
+          appointment: appointment._id,
+          visitDate: appointment.appointmentDate || new Date(),
+          
+          // Step 1: Thông tin khám
+          chiefComplaint: appointment.chiefComplaint || 'Không có thông tin',
+          presentIllness: appointment.medicalHistory || '',
+          
+          // Khám lâm sàng
+          clinicalExamination: {
+            generalAppearance: appointment.physicalExamination?.generalAppearance || '',
+            vitalSigns: appointment.physicalExamination?.vitalSigns ? {
+              bloodPressure: appointment.physicalExamination.vitalSigns
+            } : {},
+            oralExamination: {
+              teeth: {
+                condition: appointment.physicalExamination?.oralExamination || ''
+              },
+              gums: {
+                condition: appointment.physicalExamination?.otherFindings || ''
+              }
+            },
+            dentalExamination: {
+              occlusion: appointment.physicalExamination?.occlusionExamination || '',
+              periodontal: appointment.labResults || '',
+              endodontic: appointment.imagingResults || ''
+            }
+          },
+          
+          // Step 3: Chẩn đoán
+          diagnosis: {
+            primary: appointment.finalDiagnosis || 'Chưa có chẩn đoán',
+            secondary: appointment.preliminaryDiagnosis ? [appointment.preliminaryDiagnosis] : [],
+            differential: appointment.differentialDiagnosis ? [appointment.differentialDiagnosis] : []
+          },
+          
+          // Step 4 & 5: Điều trị
+          treatmentPlan: {
+            immediate: appointment.treatmentNotes ? [appointment.treatmentNotes] : [],
+            followUp: {
+              nextVisit: appointment.followUpDate,
+              instructions: appointment.followUpInstructions || '',
+              interval: appointment.followUpType || ''
+            }
+          },
+          
+          // Điều trị đã thực hiện
+          treatmentPerformed: appointment.procedures?.map(proc => ({
+            procedure: proc,
+            date: appointment.updatedAt || new Date(),
+            notes: appointment.treatmentNotes || ''
+          })) || [],
+          
+          // Ghi chú
+          notes: [
+            appointment.testInstructions,
+            appointment.testResults,
+            appointment.homeCare,
+            appointment.warnings
+          ].filter(Boolean).join('\n\n'),
+          
+          // Trạng thái
+          status: 'completed',
+          followUpRequired: !!appointment.followUpDate,
+          followUpDate: appointment.followUpDate,
+          followUpNotes: appointment.followUpInstructions || '',
+          
+          // Người tạo
+          createdBy: doctor._id,
+          lastUpdatedBy: doctor._id
+        });
+        
+        console.log('✅ Created medical record for appointment:', appointment.appointmentId);
+      } catch (medicalRecordError) {
+        console.error('❌ Error creating medical record:', medicalRecordError);
+        // Không throw error để không ảnh hưởng đến flow chính
+      }
+    }
 
     res.status(200).json({
       success: true,
