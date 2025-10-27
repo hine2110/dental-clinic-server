@@ -349,7 +349,6 @@ const getAllUsers = async (req, res) => {
   }
 };
 
-// Toggle user's active status (ban/unban) - separated function to match file format
 const toggleUserStatus = async (req, res) => {
   try {
     if (req.user.role !== "admin") {
@@ -358,15 +357,26 @@ const toggleUserStatus = async (req, res) => {
         message: "Permission denied. Only admin can toggle user status.",
       });
     }
-
-    const { id } = req.params;
+    const { id } = req.params; 
+    const adminId = (req.user.id || req.user._id).toString();
+    if (id === adminId) {
+      return res.status(403).json({
+        success: false,
+        message: "Action denied. Admin cannot ban themselves.",
+      });
+    }
     const user = await User.findById(id);
     if (!user) {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
     }
-
+    if (user.role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: "Action denied. Cannot ban another admin account."
+      });
+    }
     user.isActive = !user.isActive;
     await user.save();
 
