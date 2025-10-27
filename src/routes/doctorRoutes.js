@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate, authorize } = require('../middlewares/auth');
+const { upload, handleUploadError } = require('../middlewares/upload');
+const {
+  uploadImage,
+  deleteImage,
+  getImage,
+} = require('../controllers/uploadController');
 const {
   // Profile
   getDoctorProfile,
@@ -229,5 +235,33 @@ router.put('/medical-records/:recordId/complete', completeMedicalRecord);
  * @access  Private (Doctor only)
  */
 router.get('/medical-records/patient/:patientId', getPatientMedicalRecords);
+
+// ==================== UPLOAD IMAGES ====================
+
+/**
+ * @route   POST /api/doctor/upload/image
+ * @desc    Upload hình ảnh xét nghiệm
+ * @access  Private (Doctor only)
+ */
+router.post(
+  '/upload/image',
+  upload.single('image'),
+  handleUploadError,
+  uploadImage
+);
+
+/**
+ * @route   DELETE /api/doctor/upload/image/:filename
+ * @desc    Xóa hình ảnh xét nghiệm
+ * @access  Private (Doctor only)
+ */
+router.delete('/upload/image/:filename', deleteImage);
+
+/**
+ * @route   GET /api/doctor/upload/image/:filename
+ * @desc    Lấy hình ảnh xét nghiệm
+ * @access  Private (Doctor only)
+ */
+router.get('/upload/image/:filename', getImage);
 
 module.exports = router;

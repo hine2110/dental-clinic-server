@@ -40,6 +40,7 @@ const appointmentSchema = new mongoose.Schema(
     imagingResults: { type: String },
     labResults: { type: String },
     testResults: { type: String },
+    testImages: [{ type: String }], // Danh sách URL hình ảnh kết quả xét nghiệm
     preliminaryDiagnosis: { type: String },
     differentialDiagnosis: { type: String },
     finalDiagnosis: { type: String },
