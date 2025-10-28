@@ -25,6 +25,13 @@ const contactSchema = new mongoose.Schema(
         "Other"
       ]
     },
+
+    location: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Location',
+      required: [true, "Please select a clinic location"] // Bắt buộc
+    },
+    
     message: { 
       type: String, 
       required: [true, "Please enter your message"] 

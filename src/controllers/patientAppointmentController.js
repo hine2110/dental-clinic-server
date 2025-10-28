@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { Appointment, DoctorSchedule, Doctor, Patient, Location, Notification } = require("../models");
 const { formatInTimeZone } = require('date-fns-tz');
@@ -476,14 +477,15 @@ const createAppointment = async (req, res) => {
 const getPatientAppointments = async (req, res) => {
   try {
     const { status, date } = req.query;
-    const patientId = req.patient._id;
+    const userId = req.user._id;
+    const patient = await Patient.findOne({ user: userId }).select('_id');
+    if (!patient) {
+      return res.status(404).json({ success: false, message: "Patient profile not found." });
+    }
+    const patientId = patient._id;
 
     let query = { patient: patientId };
-    
-    if (status) {
-      query.status = status;
-    }
-    
+    if (status) query.status = status;
     if (date) {
       const startDate = new Date(date);
       const endDate = new Date(date);
@@ -492,32 +494,34 @@ const getPatientAppointments = async (req, res) => {
     }
 
     const appointments = await Appointment.find(query)
-      .populate('doctor', 'doctorId user specializations')
-      .populate('schedule', 'location startTime endTime')
+      .populate({
+        path: 'doctor',
+        select: 'user specializations',
+        populate: { path: 'user', select: 'fullName' }
+      })
       .populate({
         path: 'schedule',
-        populate: {
-          path: 'location',
-          select: 'name address'
-        }
+        select: 'location startTime endTime',
+        populate: { path: 'location', select: 'name address' }
       })
+      .populate('location', 'name address') 
+      // === KẾT THÚC THÊM MỚI ===
       .sort({ appointmentDate: -1, startTime: 1 });
 
     res.status(200).json({
       success: true,
-      message: "Lấy danh sách lịch hẹn thành công",
+      message: "Successfully retrieved appointment list.",
       data: appointments
     });
   } catch (error) {
     console.error("Get patient appointments error:", error);
     res.status(500).json({
       success: false,
-      message: "Lỗi khi lấy danh sách lịch hẹn",
+      message: "Error retrieving appointment list.",
       error: error.message
     });
   }
 };
-
 /**
  * Hủy lịch hẹn
  * DELETE /api/patient/appointments/:appointmentId
@@ -559,10 +563,184 @@ const cancelAppointment = async (req, res) => {
   }
 };
 
+const generateSelfRescheduleLink = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const userId = req.user._id;
+    const patient = await Patient.findOne({ user: userId }).select('_id');
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient profile not found' });
+    }
+    const patientId = patient._id;
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      patient: patientId
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    if (appointment.status !== 'confirmed') {
+        return res.status(400).json({ success: false, message: 'Only confirmed appointments can be rescheduled.' });
+    }
+    if (appointment.hasBeenRescheduled) {
+        return res.status(400).json({ success: false, message: 'This appointment has already been rescheduled once and cannot be changed again.' }); 
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600 * 1000); // 1 hour expiration // Het han sau 1 gio
+
+    appointment.reschedule_token = token;
+    appointment.reschedule_token_expires_at = expiresAt;
+    await appointment.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Reschedule link generated successfully.', 
+        token: token
+    });
+
+  } catch (error) {
+    console.error("Generate reschedule link error:", error);
+    res.status(500).json({ success: false, message: "Server error generating reschedule link", error: error.message }); 
+  }
+};
+
+
+const verifyRescheduleToken = async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: "Missing token" });
+    }
+
+    // Tim cuoc hen bang token va kiem tra thoi gian het han
+    const appointment = await Appointment.findOne({
+      reschedule_token: token,
+      reschedule_token_expires_at: { $gt: Date.now() },
+      status: 'confirmed' // Chi cho phep doi lich 'confirmed'
+    }).populate({
+      path: 'doctor',
+      populate: { path: 'user', select: 'fullName' }
+    }).populate('location', 'name');
+
+    if (!appointment) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Token không hợp lệ, đã hết hạn, hoặc lịch hẹn không còn ở trạng thái 'confirmed'." 
+      });
+    }
+
+    // Tra ve thong tin cuoc hen cu
+    res.status(200).json({
+      success: true,
+      data: appointment
+    });
+
+  } catch (error) {
+    console.error("Verify reschedule token error:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+const confirmReschedule = async (req, res) => {
+  try {
+    const {
+      token,
+      locationId,
+      doctorId,
+      date,
+      time
+    } = req.body;
+
+    
+    if (!token || !locationId || !doctorId || !date || !time) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+
+    
+    const appointmentToUpdate = await Appointment.findOne({
+      reschedule_token: token,
+      reschedule_token_expires_at: { $gt: Date.now() },
+      status: 'confirmed'
+    });
+
+    if (!appointmentToUpdate) {
+      return res.status(404).json({
+        success: false,
+        message: "Token is invalid, expired, or the appointment is no longer confirmed." 
+      });
+    }
+
+    if (appointmentToUpdate.hasBeenRescheduled) {
+         return res.status(400).json({ success: false, message: 'This appointment has already been rescheduled once and cannot be changed again.' }); 
+    }
+
+   
+    const appointmentDate = new Date(date);
+    const availableDoctors = await getAvailableDoctors(time, appointmentDate, locationId);
+    const isSlotStillAvailable = availableDoctors.some(
+      doctor => doctor._id.toString() === doctorId
+    );
+
+    if (!isSlotStillAvailable) {
+      return res.status(409).json({
+        success: false,
+        message: "Sorry, this time slot was just booked by someone else. Please choose a different time or doctor." 
+      });
+    }
+
+    const doctorSchedule = await DoctorSchedule.findOne({
+        doctor: doctorId,
+        location: locationId,
+        date: { $gte: new Date(new Date(date).setUTCHours(0, 0, 0, 0)) }, 
+        startTime: { $lte: time },
+        endTime: { $gt: time },
+        isAvailable: true
+    });
+
+    const startTimeMinutes = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1]);
+    const endTimeMinutes = startTimeMinutes + 60; // Assume 1 hour duration // Gia su 1 tieng
+    const endHour = Math.floor(endTimeMinutes / 60);
+    const endMinute = endTimeMinutes % 60;
+    const endTime = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+
+    appointmentToUpdate.doctor = doctorId;
+    appointmentToUpdate.location = locationId;
+    appointmentToUpdate.schedule = doctorSchedule ? doctorSchedule._id : null;
+    appointmentToUpdate.appointmentDate = appointmentDate;
+    appointmentToUpdate.startTime = time;
+    appointmentToUpdate.endTime = endTime;
+
+   
+    appointmentToUpdate.hasBeenRescheduled = true;
+ 
+    appointmentToUpdate.reschedule_token = null;
+    appointmentToUpdate.reschedule_token_expires_at = null;
+
+    await appointmentToUpdate.save();
+
+    res.status(200).json({ 
+      success: true,
+      message: "Appointment rescheduled successfully!", 
+      data: appointmentToUpdate 
+    });
+
+  } catch (error) {
+    console.error("Confirm reschedule error:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message }); 
+  }
+};
+
 module.exports = {
   getAvailableTimeSlots: getAvailableTimeSlotsAPI,
   getAvailableDoctors: getAvailableDoctorsAPI,
   createAppointment,
   getPatientAppointments,
-  cancelAppointment
+  cancelAppointment,
+  generateSelfRescheduleLink,
+  verifyRescheduleToken,
+  confirmReschedule
 };

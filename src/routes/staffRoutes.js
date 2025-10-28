@@ -11,9 +11,34 @@ const { upload, handleUploadError } = require("../middlewares/upload");
 router.use(authenticate);
 router.use(checkStaffRole);
 
+router.get("/my-locations-today", receptionistController.getMyLocationsForToday);
+
 
 // ==================== RECEPTIONIST ROUTES ====================
 
+// (MỚI) Tối ưu 1: Tìm bệnh nhân bằng CCCD
+router.get("/receptionist/patients/find-by-idcard/:idCard",
+  checkPermission("viewPatientInfo"), // Tái sử dụng quyền xem thông tin
+  receptionistController.findPatientByIdCard
+);
+
+// (MỚI) Tối ưu 2: Lấy bác sĩ rảnh theo (cơ sở, ngày, giờ)
+router.get("/receptionist/available-doctors",
+  checkPermission("editPatientInfo"), // Tái sử dụng quyền
+  receptionistController.getAvailableDoctorsForApi
+);
+
+// (MỚI) Tối ưu 1: Tìm bệnh nhân bằng CCCD
+router.get("/receptionist/patients/find-by-idcard/:idCard",
+  checkPermission("viewPatientInfo"), // Tái sử dụng quyền
+  receptionistController.findPatientByIdCard
+);
+
+// (MỚI) Tối ưu 6: Xếp hàng tự động cho khách vãng lai
+router.post("/receptionist/queue-walk-in-patient",
+  checkPermission("editPatientInfo"), // Tái sử dụng quyền (hoặc tạo quyền "createAppointment")
+  receptionistController.queueWalkInPatient
+);
 
 // Xem lịch làm việc của chính receptionist
 router.get("/receptionist/schedules/self",
@@ -48,6 +73,11 @@ router.post("/receptionist/invoices/create",
 router.put("/receptionist/invoices/:invoiceId/items",
   checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.updateInvoiceItems
+);
+
+router.post("/receptionist/walk-in-appointment",
+  checkPermission("editPatientInfo"), // Tạm dùng quyền này, bạn có thể tạo quyền 'createAppointment'
+  receptionistController.createWalkInAppointment
 );
 
 router.post("/receptionist/invoices/:invoiceId/apply-discount",

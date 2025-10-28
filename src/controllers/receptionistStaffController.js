@@ -12,6 +12,8 @@ const Prescription = require("../models/Prescription");
 const Medicine = require("../models/Medicine");
 const Invoice = require("../models/Invoice");
 const User = require("../models/User");
+const Patient = require("../models/Patient"); // <-- 1. ĐÃ THÊM LẠI IMPORT BỊ THIẾU
+const mongoose = require("mongoose");
 
 const BANK_ID = "970422"; // Đây là BIN của MBBank. Tra cứu BIN ngân hàng của bạn
 const ACCOUNT_NUMBER = "0935655266"; // Thay bằng STK thật của bạn
@@ -21,11 +23,37 @@ const ACCOUNT_NAME = "NGUYEN TRAN GIA HUY"; // Tên chủ tài khoản
 // 5. Xem danh sách lịch hẹn 
 const getAppointments = async (req, res) => {
   try {
+    // === 1. LẤY ID NHÂN VIÊN ===
+    // (Giả định middleware 'checkStaffRole' đã thêm req.staff)
+    const staffId = req.staff._id; 
+
+    // === 2. TÌM TẤT CẢ CƠ SỞ ĐƯỢC PHÂN CÔNG ===
+    // Quét StaffSchedule để xem nhân viên này "thuộc" về những cơ sở nào
+    const staffSchedules = await StaffSchedule.find({ staff: staffId }).select('location');
+    const locationIds = [...new Set(staffSchedules.map(s => s.location.toString()))];
+
+    // Nếu nhân viên không được phân công ở đâu, trả về rỗng
+    if (locationIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Bạn chưa được phân công cho bất kỳ cơ sở nào.",
+        data: [],
+        pagination: { currentPage: 1, totalPages: 0, totalAppointments: 0 }
+      });
+    }
+
+    // === 3. XÂY DỰNG QUERY (ĐÃ THÊM FILTER CƠ SỞ) ===
     const page = parseInt(req.query.page) || 1;
     const limit = 10;
     const skip = (page - 1) * limit;
-    const { status, date, doctorId } = req.query;
+    const { status, date, doctorId, search } = req.query;
+
     let query = {};
+    
+    // THÊM MỚI: Lọc theo cơ sở được phân công
+    query.location = { $in: locationIds }; 
+
+    // (Logic cũ giữ nguyên)
     if (status) {
       query.status = status;
     } 
@@ -44,8 +72,19 @@ const getAppointments = async (req, res) => {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     }
     if (doctorId) query.doctor = doctorId;
+
+    if (search) {
+      const searchTermRegex = new RegExp(search, 'i');
+      const matchingPatients = await Patient.find({ 
+        "basicInfo.fullName": searchTermRegex 
+      }).select('_id');
+      const patientIds = matchingPatients.map(p => p._id);
+      query.patient = { $in: patientIds };
+    }
+    
+    // === 4. THỰC THI QUERY ===
     const [appointments, totalAppointments] = await Promise.all([
-      Appointment.find(query)
+      Appointment.find(query) // Query đã được lọc
         .populate({
           path: 'doctor',
           populate: { path: 'user', select: 'fullName' }
@@ -54,10 +93,11 @@ const getAppointments = async (req, res) => {
           path: 'patient',
           select: 'basicInfo'
         })
+        .populate('location', 'name') // (Tùy chọn) Thêm populate location
         .sort({ appointmentDate: 1, startTime: 1 })
         .skip(skip) 
         .limit(limit), 
-      Appointment.countDocuments(query)
+      Appointment.countDocuments(query) // Đếm query đã lọc
     ]);
     
     const totalPages = Math.ceil(totalAppointments / limit);
@@ -586,7 +626,7 @@ const generateTransferQrCode = async (req, res) => {
 };
 
 // 7. Xem thông tin của bệnh nhân
-const Patient = require("../models/Patient");
+// const Patient = require("../models/Patient"); // <-- 2. ĐÃ XÓA IMPORT THỪA
 const viewPatientInfo = async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -775,7 +815,466 @@ const getOwnProfile = async (req, res) => {
   }
 };
 
+const getMyLocationsForToday = async (req, res) => {
+  try {
+    const staffId = req.staff._id;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextDay = new Date(today);
+    nextDay.setDate(today.getDate() + 1);
 
+    const schedules = await StaffSchedule.find({
+      staff: staffId,
+      date: { $gte: today, $lt: nextDay },
+      isAvailable: true
+    }).select('location')
+      .populate('location', 'name'); 
+    const uniqueLocationsMap = new Map();
+    schedules.forEach(s => {
+      if (s.location) {
+        uniqueLocationsMap.set(s.location._id.toString(), s.location);
+      }
+    });
+
+    const locations = Array.from(uniqueLocationsMap.values());
+    
+    res.status(200).json({ success: true, data: locations }); 
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const createWalkInAppointment = async (req, res) => {
+  try {
+    const staffId = req.staff._id;
+    const {
+      locationId,
+      appointmentDate,
+      time, 
+      doctorId,
+      existingPatientId,
+      patientData
+      
+    } = req.body;
+    const apptFields = { locationId, appointmentDate, time, doctorId };
+    for (const [key, value] of Object.entries(apptFields)) {
+      if (!value) {
+        return res.status(400).json({ success: false, message: `Thiếu thông tin lịch hẹn: ${key}` });
+      }
+    }
+
+    let patientId;
+    if (existingPatientId) {
+      const existingPatient = await Patient.findById(existingPatientId);
+      if (!existingPatient) {
+        return res.status(404).json({ success: false, message: "Lỗi: Bệnh nhân (existingPatientId) không tồn tại." });
+      }
+      patientId = existingPatient._id;
+    } 
+    else if (patientData) {
+      const { fullName, dateOfBirth, phone, gender, idCard } = patientData;
+      const requiredPatientFields = { fullName, dateOfBirth, phone, gender, idCard };
+      
+      for (const [key, value] of Object.entries(requiredPatientFields)) {
+        if (!value) {
+          return res.status(400).json({ success: false, message: `Thiếu thông tin bệnh nhân: ${key}` });
+        }
+      }
+      let userEmail = patientData.email;
+      if (!userEmail) {
+        userEmail = `${new mongoose.Types.ObjectId()}@walkin.placeholder`;
+      }
+      
+      const existingUser = await User.findOne({ email: userEmail });
+      if (existingUser && patientData.email) {
+          return res.status(409).json({ success: false, message: "Lỗi: Email này đã được sử dụng." });
+      }
+
+      const tempPassword = crypto.randomBytes(8).toString('hex');
+      const newUser = new User({
+        fullName,
+        email: userEmail,
+        password: tempPassword,
+        phone,
+        role: 'patient'
+      });
+      await newUser.save();
+
+      const newPatient = new Patient({
+        user: newUser._id,
+        basicInfo: {
+          fullName: fullName,
+          dateOfBirth: new Date(dateOfBirth),
+          gender: gender,
+          idCard: { idNumber: idCard }
+        },
+        contactInfo: {
+          phone: phone,
+          email: userEmail,
+          address: { street: "N/A", city: "N/A", state: "N/A", zipCode: "N/A" }
+        },
+        isProfileComplete: false
+      });
+      await newPatient.save();
+      patientId = newPatient._id;
+      
+    } else {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin bệnh nhân (existingPatientId hoặc patientData)." });
+    }
+    const targetDate = new Date(appointmentDate);
+    const availableDoctors = await getAvailableDoctors(time, targetDate, locationId);
+    
+    const isDoctorAvailable = availableDoctors.some(
+      doc => doc._id.toString() === doctorId
+    );
+    if (!isDoctorAvailable) {
+      return res.status(409).json({ 
+        success: false, 
+        message: "Khung giờ này của bác sĩ vừa có người khác đặt. Vui lòng F5 và chọn lại." 
+      });
+    }
+    const appointment = new Appointment({
+      appointmentId: `APT-${Date.now().toString().slice(-6)}`,
+      doctor: doctorId,
+      patient: patientId,
+      location: locationId,
+      staff: staffId, 
+      appointmentDate: targetDate,
+      startTime: time,
+      status: 'checked-in',    
+      paymentStatus: 'paid',
+      bookingType: 'walk-in'
+    });
+
+    await appointment.save();
+
+    res.status(201).json({
+      success: true,
+      action: 'created', 
+      message: "Tạo lịch hẹn vãng lai thành công!",
+      data: appointment
+    });
+
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: "Lỗi xác thực: " + error.message });
+    }
+    console.error("Lỗi khi tạo lịch hẹn vãng lai:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi máy chủ nội bộ",
+      error: error.message
+    });
+  }
+};
+
+const getAvailableDoctors = async (time, date, locationId) => {
+  try {
+
+    const targetDate = new Date(date);
+    const targetDateStart = new Date(targetDate.setUTCHours(0, 0, 0, 0));
+    const targetDateEnd = new Date(targetDate.setUTCDate(targetDate.getUTCDate() + 1));
+
+      const schedules = await DoctorSchedule.find({
+      location: new mongoose.Types.ObjectId(locationId),
+      date: { $gte: targetDateStart, $lt: targetDateEnd },
+      startTime: { $lte: time },
+      endTime: { $gt: time },
+      isAvailable: true
+    }).populate({
+      path: 'doctor',
+      populate: { path: 'user', select: 'fullName avatar' },
+      select: 'user specializations experience'
+    });
+    const validSchedules = schedules.filter(s => s.doctor);
+    if (validSchedules.length === 0) {
+      return [];
+    }
+    const availableDoctorsOnSchedule = validSchedules.map(s => s.doctor);
+    const availableDoctorIds = availableDoctorsOnSchedule.map(d => d._id);
+    const existingAppointments = await Appointment.find({
+      doctor: { $in: availableDoctorIds },
+      appointmentDate: { $gte: targetDateStart, $lt: targetDateEnd },
+      startTime: time,
+      status: { $in: ["pending", "confirmed"] }
+    });
+    
+    const bookedDoctorIds = new Set(existingAppointments.map(app => app.doctor.toString()));
+    const trulyAvailableDoctors = availableDoctorsOnSchedule.filter(
+      doctor => !bookedDoctorIds.has(doctor._id.toString())
+    );
+    const uniqueDoctors = [];
+    const doctorIdsSet = new Set();
+    for (const doctor of trulyAvailableDoctors) {
+      if (!doctorIdsSet.has(doctor._id.toString())) {
+        doctorIdsSet.add(doctor._id.toString());
+        uniqueDoctors.push(doctor);
+      }
+    }
+    return uniqueDoctors;
+
+  } catch (error) {
+    console.error("!!! [DEBUG] Lỗi nghiêm trọng trong getAvailableDoctors:", error);
+    return [];
+  }
+};
+
+// (HÀM MỚI) 1. API Handler cho Tối ưu 1: Tìm bệnh nhân bằng CCCD
+// === THÊM HÀM MỚI 1: TÌM BỆNH NHÂN BẰNG CCCD ===
+const findPatientByIdCard = async (req, res) => {
+  try {
+    const { idCard } = req.params;
+    if (!idCard) {
+      return res.status(400).json({ success: false, message: "Thiếu CCCD." });
+    }
+
+    // Tìm trong mảng basicInfo.idCard
+    const patient = await Patient.findOne({ "basicInfo.idCard.idNumber": idCard });
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        action: 'create_new', // Báo cho frontend biết để tạo mới
+        message: "Không tìm thấy bệnh nhân. Vui lòng tạo hồ sơ mới."
+      });
+    }
+
+    // Tìm thấy
+    res.status(200).json({
+      success: true,
+      action: 'patient_found',
+      data: patient
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi máy chủ khi tìm bệnh nhân",
+      error: error.message
+    });
+  }
+};
+
+
+// === THAY THẾ TOÀN BỘ HÀM NÀY ===
+const queueWalkInPatient = async (req, res) => {
+  const staffId = req.staff._id;
+  const { locationId, existingPatientId, patientData } = req.body;
+  
+  const AVG_SLOT_DURATION_MINUTES = 30; // Giả định 30 phút/lịch
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    let patientId;
+    if (existingPatientId) {
+      patientId = existingPatientId;
+    } else if (patientData) {
+      const { fullName, dateOfBirth, phone, gender, idCard, email } = patientData;
+      let userEmail = email;
+      if (!email) {
+        userEmail = `${new mongoose.Types.ObjectId()}@walkin.placeholder`;
+      }
+      const tempPassword = crypto.randomBytes(8).toString('hex');
+      const newUser = new User({
+        fullName, email: userEmail, password: tempPassword, phone, role: 'patient'
+      });
+      await newUser.save({ session });
+      const newPatient = new Patient({
+        user: newUser._id,
+        basicInfo: { fullName, dateOfBirth, gender, idCard: { idNumber: idCard } },
+        contactInfo: { phone, email: userEmail, address: { street: "N/A", city: "N/A", state: "N/A", zipCode: "N/A" }},
+        isProfileComplete: false
+      });
+      await newPatient.save({ session });
+      patientId = newPatient._id;
+    } else {
+      throw new Error("Thiếu thông tin bệnh nhân.");
+    }
+
+    // === 2. THUẬT TOÁN TỰ ĐỘNG GÁN BÁC SĨ (ĐÃ SỬA LỖI) ===
+
+    const today = new Date();
+    const todayStart = new Date(today.setHours(0, 0, 0, 0));
+    const todayEnd = new Date(today.setHours(23, 59, 59, 999));
+    const now = new Date(); 
+
+    // A. Tìm tất cả bác sĩ đang làm việc (Giữ nguyên)
+    const workingSchedules = await DoctorSchedule.find({
+      location: locationId,
+      date: { $gte: todayStart, $lt: todayEnd },
+      startTime: { $lte: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) },
+      endTime: { $gt: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) },
+      isAvailable: true
+    }).select('doctor').session(session);
+
+    const workingDoctorIds = workingSchedules.map(s => s.doctor);
+    if (workingDoctorIds.length === 0) {
+      throw new Error("Không có bác sĩ nào đang trong ca làm việc tại cơ sở này.");
+    }
+
+    // B. Lấy hàng chờ của các bác sĩ đó (Giữ nguyên)
+    const appointments = await Appointment.find({
+      doctor: { $in: workingDoctorIds },
+      appointmentDate: { $gte: todayStart, $lt: todayEnd },
+      // === SỬA LỖI: CHỈ TÍNH CÁC LỊCH CHƯA HỦY ===
+      status: { $nin: ['cancelled', 'no-show'] } 
+    }).select('doctor startTime')
+      .sort({ startTime: 1 }) // Sắp xếp theo thời gian
+      .session(session);
+
+    // C. Tính toán "Giờ rảnh tiếp theo"
+    const doctorQueue = new Map();
+    for (const doctorId of workingDoctorIds) {
+      const doctorAppts = appointments.filter(a => a.doctor.toString() === doctorId.toString());
+      
+      let nextAvailableSlot = new Date(now.getTime()); // Bắt đầu từ bây giờ
+
+      // Lọc ra các lịch hẹn TRONG TƯƠNG LAI (chưa diễn ra)
+      const futureAppts = doctorAppts.filter(a => {
+        const [hour, min] = a.startTime.split(':').map(Number);
+        const apptTime = new Date(todayStart);
+        apptTime.setHours(hour, min);
+        return apptTime >= now;
+      });
+
+      if (futureAppts.length > 0) {
+        
+        const [firstHour, firstMin] = futureAppts[0].startTime.split(':').map(Number);
+        const firstApptStartTime = new Date(todayStart);
+        firstApptStartTime.setHours(firstHour, firstMin);
+        
+        // Giờ 'Bây giờ' + 30 phút có < Giờ hẹn đầu tiên không?
+        let nowPlusSlot = new Date(now.getTime() + AVG_SLOT_DURATION_MINUTES * 60000);
+
+        if (nowPlusSlot <= firstApptStartTime) {
+          // CÓ KHE HỞ! Bác sĩ rảnh ngay bây giờ.
+          // nextAvailableSlot VẪN LÀ 'now' (đã gán ở trên)
+        } else {
+          // KHÔNG CÓ KHE HỞ (ví dụ: 'now' là 10:45, hẹn là 11:00)
+          // Giờ rảnh là SAU LỊCH HẸN CUỐI CÙNG (tính cả lịch quá khứ)
+          const [lastHour, lastMin] = doctorAppts[doctorAppts.length - 1].startTime.split(':').map(Number);
+          const lastApptEndTime = new Date(todayStart);
+          lastApptEndTime.setHours(lastHour, lastMin + AVG_SLOT_DURATION_MINUTES);
+          
+          nextAvailableSlot = (lastApptEndTime > now) ? lastApptEndTime : now;
+        }
+      } 
+      else if (doctorAppts.length > 0) {
+        // Bác sĩ CÓ lịch hẹn, nhưng TẤT CẢ đã ở quá khứ
+        const [lastHour, lastMin] = doctorAppts[doctorAppts.length - 1].startTime.split(':').map(Number);
+        const lastApptEndTime = new Date(todayStart);
+        lastApptEndTime.setHours(lastHour, lastMin + AVG_SLOT_DURATION_MINUTES);
+        
+        nextAvailableSlot = (lastApptEndTime > now) ? lastApptEndTime : now;
+      }
+      // (Nếu doctorAppts.length == 0 (Dr. A, B), nextAvailableSlot là 'now')
+
+      doctorQueue.set(doctorId.toString(), {
+        nextSlotTime: nextAvailableSlot,
+        totalAppts: doctorAppts.length // Để cân bằng tải
+      });
+    }
+
+    // D. Tìm bác sĩ rảnh sớm nhất (Cân bằng tải) - Logic này giữ nguyên
+    let bestDoctorId = null;
+    let earliestTime = new Date("9999-12-31");
+    let minAppts = Infinity;
+
+    for (const [doctorId, info] of doctorQueue.entries()) {
+      if (info.nextSlotTime < earliestTime) {
+        earliestTime = info.nextSlotTime;
+        minApppts = info.totalAppts;
+        bestDoctorId = doctorId;
+      } else if (info.nextSlotTime.getTime() === earliestTime.getTime()) {
+        if (info.totalAppts < minApppts) {
+          minApppts = info.totalAppts;
+          bestDoctorId = doctorId;
+        }
+      }
+    }
+
+    if (!bestDoctorId) {
+      throw new Error("Lỗi thuật toán: Không tìm được bác sĩ phù hợp.");
+    }
+    
+    // E. Làm tròn startTime (Giữ nguyên)
+    const minutes = earliestTime.getMinutes();
+    const roundedMinutes = Math.ceil(minutes / 15) * 15; 
+    earliestTime.setMinutes(roundedMinutes, 0, 0);
+    const finalStartTime = earliestTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+
+    // === 3. TẠO LỊCH HẸN (Giữ nguyên) ===
+    const appointment = new Appointment({
+      appointmentId: `APT-${Date.now().toString().slice(-6)}`,
+      doctor: bestDoctorId,
+      patient: patientId,
+      location: locationId,
+      staff: staffId, 
+      appointmentDate: todayStart, 
+      startTime: finalStartTime,   
+      status: 'checked-in',     
+      paymentStatus: 'paid', 
+      bookingType: 'walk-in'
+    });
+    
+    await appointment.save({ session }); 
+
+    // === 4. COMMIT TRANSACTION (Giữ nguyên) ===
+    await session.commitTransaction();
+    session.endSession();
+
+    const assignedDoctor = await Doctor.findById(bestDoctorId).populate('user', 'fullName');
+
+    res.status(201).json({
+      success: true,
+      message: `Xếp hàng thành công! Mời bệnh nhân đến phòng Bác sĩ ${assignedDoctor.user.fullName}.`,
+      data: {
+        appointment,
+        doctorName: assignedDoctor.user.fullName,
+        assignedTime: finalStartTime
+      }
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    
+    console.error("Lỗi khi xếp hàng vãng lai:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Lỗi máy chủ nội bộ."
+    });
+  }
+};
+
+// (HÀM MỚI) 2. API Handler cho Tối ưu 2: Lấy bác sĩ rảnh
+const getAvailableDoctorsForApi = async (req, res) => {
+  try {
+    const { locationId, date, time } = req.query;
+    
+    if (!locationId || !date || !time) {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin locationId, date, hoặc time." });
+    }
+
+    // Gọi hàm helper `getAvailableDoctors` mà bạn đã viết
+    const doctors = await getAvailableDoctors(time, date, locationId);
+
+    res.status(200).json({
+      success: true,
+      data: doctors
+    });
+
+  } catch (error) {
+    console.error("Lỗi API getAvailableDoctorsForApi:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi máy chủ khi lấy danh sách bác sĩ",
+      error: error.message
+    });
+  }
+};
 
 
 
@@ -795,5 +1294,10 @@ module.exports = {
   finalizePayment,
   applyDiscountCode,
   generateTransferQrCode,
-  getInvoiceHistory
+  getInvoiceHistory,
+  getMyLocationsForToday, // <-- 4. THÊM LẠI VÀO EXPORTS
+  createWalkInAppointment,
+  findPatientByIdCard,
+  getAvailableDoctorsForApi,
+  queueWalkInPatient
 };
