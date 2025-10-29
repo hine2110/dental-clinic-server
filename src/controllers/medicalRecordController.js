@@ -143,10 +143,10 @@ const getDoctorMedicalRecords = async (req, res) => {
     }
 
     const medicalRecords = await MedicalRecord.find(query)
-      .populate('patient', 'user basicInfo contactInfo')
       .populate('appointment', 'appointmentDate startTime')
       .populate({
         path: 'patient',
+        select: 'user basicInfo contactInfo',
         populate: {
           path: 'user',
           select: 'fullName email phone'

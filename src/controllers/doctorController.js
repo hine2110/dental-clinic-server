@@ -1228,7 +1228,7 @@ const updateAppointmentStatus = async (req, res) => {
 const getMedicines = async (req, res) => {
   try {
     const medicines = await Medicine.find({ isActive: true })
-      .select('name description unit price')
+      .select('name description unit price currentStock')
       .sort({ name: 1 });
 
     res.status(200).json({
