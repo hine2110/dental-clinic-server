@@ -3,8 +3,13 @@ const mongoose = require("mongoose");
 const itemSchema = new mongoose.Schema({
   item: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Service",
     required: true,
+    refPath: 'itemModel' 
+  },
+  itemModel: {
+    type: String,
+    required: true,
+    enum: ['Service', 'ServiceDoctor']
   },
   quantity: {
     type: Number,

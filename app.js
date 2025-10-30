@@ -50,10 +50,11 @@ const doctorRoutes = require("./src/routes/doctorRoutes");
 const stripeRoutes = require("./src/routes/stripeRoutes");
 const rescheduleRoutes = require('./src/routes/rescheduleRoutes'); 
 const contactRoutes = require('./src/routes/contactRoutes');
+const locationController = require('./src/controllers/locationController');
 
 app.get("/", (req, res) => res.json({ message: "Dental Clinic Management API" }));
 app.get("/health", (req, res) => res.status(200).json({ status: "OK" }));
-
+app.get('/api/locations', locationController.getActiveLocations);
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/management", managementRoutes);

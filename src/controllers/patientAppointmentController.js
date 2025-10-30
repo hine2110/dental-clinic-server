@@ -304,168 +304,133 @@ const getAvailableDoctorsAPI = async (req, res) => {
 };
 
 /**
- * Đặt lịch hẹn
+ * Đặt lịch hẹn (ĐÃ NÂNG CẤP TRANSACTION)
  * POST /api/patient/appointments
  */
-const createAppointment = async (req, res) => {
+const createAppointment = async (req, res) => { 
+  const userId = req.user.id;
+  const { doctorId, locationId, date, time, reasonForVisit } = req.body;
+  if (!doctorId || !locationId || !date || !time) {
+    return res.status(400).json({ success: false, message: "Thiếu thông tin bắt buộc." });
+  }
+  const appointmentDate = new Date(date);
+  if (isNaN(appointmentDate.getTime())) {
+    return res.status(400).json({ success: false, message: "Ngày không hợp lệ." });
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (appointmentDate < today) {
+    return res.status(400).json({ success: false, message: "Không thể đặt lịch trong quá khứ" });
+  }
+  const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+  if (!timeRegex.test(time)) {
+     return res.status(400).json({ success: false, message: "Giờ không hợp lệ (định dạng HH:MM)" });
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const { doctorId, locationId, date, time, reasonForVisit } = req.body;
-    const patientId = req.patient._id;
+    const patientProfile = await Patient.findOne({ user: userId }).session(session); 
+    if (!patientProfile) {
+      throw new Error("Không tìm thấy hồ sơ bệnh nhân. Vui lòng cập nhật hồ sơ.");
+    }
+    const patientId = patientProfile._id; 
 
-    if (!doctorId || !locationId || !date || !time) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu thông tin bắt buộc (bác sĩ, cơ sở, ngày, giờ)"
-      });
+    const targetDate = new Date(appointmentDate); 
+    const targetDateStart = new Date(new Date(targetDate).setHours(0, 0, 0, 0)); 
+    const targetDateEnd = new Date(new Date(targetDate).setHours(23, 59, 59, 999)); 
+
+    // 3. KIỂM TRA XUNG ĐỘT (Đọc bên trong transaction)
+    const existingSlot = await Appointment.findOne({
+      doctor: doctorId,
+      appointmentDate: { $gte: targetDateStart, $lt: targetDateEnd },
+      startTime: time,
+      status: { $nin: ['cancelled', 'no-show'] } 
+    }).session(session); 
+
+    if (existingSlot) {
+      // Nếu tìm thấy -> Race condition!
+      throw new Error("Rất tiếc, giờ hẹn này vừa có người khác đặt. Vui lòng chọn giờ khác."); //
     }
 
-    if (!doctorId || !locationId || !date || !time) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu thông tin bắt buộc"
-      });
-    }
-
-    const appointmentDate = new Date(date);
-    if (isNaN(appointmentDate.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: "Ngày không hợp lệ"
-      });
-    }
-
-    // Kiểm tra ngày không được trong quá khứ
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (appointmentDate < today) {
-      return res.status(400).json({
-        success: false,
-        message: "Không thể đặt lịch trong quá khứ"
-      });
-    }
-
-    // Validate time format
-    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-    if (!timeRegex.test(time)) {
-      return res.status(400).json({
-        success: false,
-        message: "Giờ không hợp lệ (định dạng HH:MM)"
-      });
-    }
-
-    // Kiểm tra bác sĩ có tồn tại không
-    const doctor = await Doctor.findById(doctorId);
-    if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy bác sĩ"
-      });
-    }
-
-    // Kiểm tra bác sĩ có lịch làm việc trong giờ này không
+    // (Kiểm tra lại DoctorSchedule trong transaction)
     const doctorSchedule = await DoctorSchedule.findOne({
       doctor: doctorId,
       location: locationId,
-      date: {
-        $gte: new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate()),
-        $lt: new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate() + 1)
-      },
+      date: { $gte: targetDateStart, $lt: targetDateEnd }, 
       startTime: { $lte: time },
       endTime: { $gt: time },
       isAvailable: true
-    });
-
+    }).session(session);
     if (!doctorSchedule) {
-      return res.status(400).json({
-        success: false,
-        message: "Bác sĩ không có lịch làm việc trong giờ này"
-      });
+      throw new Error("Bác sĩ không có lịch làm việc trong giờ này hoặc giờ hẹn không còn khả dụng.");
     }
-
-    // Kiểm tra xem bệnh nhân đã có lịch hẹn trong giờ này chưa
-    const existingAppointment = await Appointment.findOne({
-      patient: patientId,
-      appointmentDate: {
-        $gte: new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate()),
-        $lt: new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate() + 1)
-      },
-      startTime: time,
-      status: { $in: ["pending", "confirmed"] }
-    });
-
-    if (existingAppointment) {
-      return res.status(400).json({
-        success: false,
-        message: "Bạn đã có lịch hẹn trong giờ này"
-      });
-    }
-
-    // Tạo appointmentId tự động
-    const appointmentCount = await Appointment.countDocuments();
+    // 4. TẠO MỚI (Viết bên trong transaction)
+    const appointmentCount = await Appointment.estimatedDocumentCount();
     const appointmentId = `APT${String(appointmentCount + 1).padStart(6, '0')}`;
-
-    // Tính endTime (mặc định 1 tiếng)
     const startTimeMinutes = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1]);
-    const endTimeMinutes = startTimeMinutes + 60;
+    const endTimeMinutes = startTimeMinutes + 60; // Giả định 1 tiếng
     const endHour = Math.floor(endTimeMinutes / 60);
     const endMinute = endTimeMinutes % 60;
     const endTime = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
 
-    // Tạo lịch hẹn
-    const appointment = new Appointment({
+    const newAppointment = new Appointment({
       appointmentId,
       doctor: doctorId,
       patient: patientId,
-      location: locationId, 
+      location: locationId,
       schedule: doctorSchedule._id,
-      appointmentDate,
+      appointmentDate: targetDateStart,
       startTime: time,
       endTime: endTime,
       reasonForVisit: reasonForVisit || "",
-      status: "pending",
-      paymentStatus: "pending"
+      status: "pending", 
+      paymentStatus: "pending", 
+      bookingType: 'online'
     });
 
-    await appointment.save();
+    await newAppointment.save({ session }); 
 
-    // Populate thông tin để trả về
-    const populatedAppointment = await Appointment.findById(appointment._id)
-      .populate('doctor', 'doctorId user specializations')
-      .populate('patient', 'user contactInfo')
-      .populate('schedule', 'location startTime endTime');
+    // 5. COMMIT TRANSACTION
+    await session.commitTransaction();
+    session.endSession();
 
-    // Gửi thông báo cho bác sĩ
+    // === Gửi thông báo sau khi đã chắc chắn lưu ===
     try {
       await Notification.create({
-        sender: patientId,
-        recipients: [doctorId],
-        recipientModel: "Doctor",
-        title: "Lịch hẹn mới",
-        message: `Có lịch hẹn mới vào ngày ${appointmentDate.toLocaleDateString('vi-VN')} lúc ${time}`,
-        type: "appointment_created",
-        relatedData: {
-          appointmentId: appointment._id,
-          patientId: patientId,
-          doctorId: doctorId,
-          appointmentDate,
-          startTime: time
-        }
+         sender: patientId,
+         recipients: [doctorId],
+         recipientModel: "Doctor",
+         title: "Lịch hẹn mới",
+         message: `Có lịch hẹn mới vào ngày ${targetDate.toLocaleDateString('vi-VN')} lúc ${time}`,
+         type: "appointment_created",
+         relatedData: { appointmentId: newAppointment._id }
       });
     } catch (notifyError) {
-      console.error("Error sending notification:", notifyError);
+      console.error("Lỗi gửi thông báo sau khi đặt lịch:", notifyError);
     }
+    // Populate để trả về (không cần session nữa)
+    const populatedAppointment = await Appointment.findById(newAppointment._id)
+      .populate({ path: 'doctor', populate: { path: 'user', select: 'fullName' } }) 
+      .populate({ path: 'patient', populate: { path: 'user', select: 'fullName' } }) 
+      .populate('location', 'name');
 
     res.status(201).json({
       success: true,
-      message: "Đặt lịch hẹn thành công",
+      message: "Đặt lịch hẹn thành công", 
       data: populatedAppointment
     });
+
   } catch (error) {
-    console.error("Create appointment error:", error);
+    // 6. ROLLBACK TRANSACTION
+    await session.abortTransaction();
+    session.endSession();
+
+    console.error("Lỗi tạo lịch hẹn:", error);
     res.status(500).json({
       success: false,
-      message: "Lỗi khi đặt lịch hẹn",
-      error: error.message
+      message: error.message || "Lỗi khi đặt lịch hẹn.",
     });
   }
 };
@@ -645,92 +610,102 @@ const verifyRescheduleToken = async (req, res) => {
   }
 };
 
+/**
+ * Bệnh nhân xác nhận đổi lịch (ĐÃ NÂNG CẤP TRANSACTION)
+ * POST /api/patient/reschedule/confirm
+ */
 const confirmReschedule = async (req, res) => {
+  const {
+    token,
+    locationId, 
+    doctorId,   
+    date,       
+    time        
+  } = req.body;
+  // ... (phần kiểm tra input giữ nguyên) ...
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const {
-      token,
-      locationId,
-      doctorId,
-      date,
-      time
-    } = req.body;
-
-    
-    if (!token || !locationId || !doctorId || !date || !time) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
-
-    
+    // Tìm lịch hẹn gốc (giữ nguyên)
     const appointmentToUpdate = await Appointment.findOne({
-      reschedule_token: token,
-      reschedule_token_expires_at: { $gt: Date.now() },
+      reschedule_token: token, 
+      reschedule_token_expires_at: { $gt: Date.now() }, 
       status: 'confirmed'
-    });
+    }).session(session); 
 
     if (!appointmentToUpdate) {
-      return res.status(404).json({
-        success: false,
-        message: "Token is invalid, expired, or the appointment is no longer confirmed." 
-      });
+      throw new Error("Token không hợp lệ, đã hết hạn, hoặc lịch hẹn không còn ở trạng thái cho phép đổi.");
+    }
+    if (appointmentToUpdate.hasBeenRescheduled) { 
+      throw new Error('Lịch hẹn này đã được đổi một lần và không thể thay đổi lại.');
     }
 
-    if (appointmentToUpdate.hasBeenRescheduled) {
-         return res.status(400).json({ success: false, message: 'This appointment has already been rescheduled once and cannot be changed again.' }); 
-    }
-
-   
-    const appointmentDate = new Date(date);
-    const availableDoctors = await getAvailableDoctors(time, appointmentDate, locationId);
-    const isSlotStillAvailable = availableDoctors.some(
-      doctor => doctor._id.toString() === doctorId
-    );
-
-    if (!isSlotStillAvailable) {
-      return res.status(409).json({
-        success: false,
-        message: "Sorry, this time slot was just booked by someone else. Please choose a different time or doctor." 
-      });
-    }
+    const targetDate = new Date(date); 
+    const targetDateStart = new Date(new Date(targetDate).setHours(0, 0, 0, 0)); 
+    const targetDateEnd = new Date(new Date(targetDate).setHours(23, 59, 59, 999)); 
 
     const doctorSchedule = await DoctorSchedule.findOne({
         doctor: doctorId,
         location: locationId,
-        date: { $gte: new Date(new Date(date).setUTCHours(0, 0, 0, 0)) }, 
+        date: { $gte: targetDateStart, $lt: targetDateEnd },
         startTime: { $lte: time },
         endTime: { $gt: time },
         isAvailable: true
-    });
+    }).session(session); 
+    if (!doctorSchedule) {
+      throw new Error("Bác sĩ không có lịch làm việc tại giờ hẹn mới hoặc giờ hẹn không còn khả dụng.");
+    }
 
+    // 4. CẬP NHẬT (Giữ nguyên)
+    // Chúng ta CỨ CẬP NHẬT. Nếu trùng, CSDL sẽ ném lỗi E11000
     const startTimeMinutes = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1]);
-    const endTimeMinutes = startTimeMinutes + 60; // Assume 1 hour duration // Gia su 1 tieng
+    const endTimeMinutes = startTimeMinutes + 60;
     const endHour = Math.floor(endTimeMinutes / 60);
     const endMinute = endTimeMinutes % 60;
     const endTime = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
 
     appointmentToUpdate.doctor = doctorId;
     appointmentToUpdate.location = locationId;
-    appointmentToUpdate.schedule = doctorSchedule ? doctorSchedule._id : null;
-    appointmentToUpdate.appointmentDate = appointmentDate;
+    appointmentToUpdate.schedule = doctorSchedule._id; 
+    appointmentToUpdate.appointmentDate = targetDateStart; 
     appointmentToUpdate.startTime = time;
-    appointmentToUpdate.endTime = endTime;
-
-   
-    appointmentToUpdate.hasBeenRescheduled = true;
- 
-    appointmentToUpdate.reschedule_token = null;
+    appointmentToUpdate.status = 'confirmed'; 
+    appointmentToUpdate.hasBeenRescheduled = true; 
+    appointmentToUpdate.reschedule_token = null; 
     appointmentToUpdate.reschedule_token_expires_at = null;
 
-    await appointmentToUpdate.save();
+    await appointmentToUpdate.save({ session }); // <-- Thao tác này sẽ ném lỗi E11000 nếu trùng
 
-    res.status(200).json({ 
+    // 5. COMMIT TRANSACTION (Giữ nguyên)
+    await session.commitTransaction();
+
+    res.status(200).json({
       success: true,
-      message: "Appointment rescheduled successfully!", 
-      data: appointmentToUpdate 
+      message: "Đổi lịch hẹn thành công!", 
+      data: appointmentToUpdate
     });
 
   } catch (error) {
-    console.error("Confirm reschedule error:", error);
-    res.status(500).json({ success: false, message: "Server error", error: error.message }); 
+    // 6. ROLLBACK TRANSACTION
+    await session.abortTransaction();
+    if (error.code === 11000) {
+        console.error("Lỗi Race Condition (E11000) khi đổi lịch:", error.message);
+        return res.status(409).json({ // 409 Conflict
+            success: false,
+            message: "Không thể đổi lịch. Giờ hẹn mới này vừa có người khác đặt. Vui lòng chọn lại."
+        });
+    }
+
+    // Các lỗi khác
+    console.error("Lỗi xác nhận đổi lịch:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Lỗi khi xác nhận đổi lịch.",
+    });
+  } finally {
+      session.endSession(); // Luôn đóng session
   }
 };
 

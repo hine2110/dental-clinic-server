@@ -17,7 +17,7 @@ const appointmentSchema = new mongoose.Schema(
     status: {
       type: String,
       // Thêm 'rescheduled' nếu bạn muốn phân biệt rõ hơn, nhưng 'cancelled' cũng đủ
-      enum: ["pending", "confirmed", "checked-in", "on-hold", "in-progress", "waiting-for-results", "in-treatment", "cancelled", "completed", "no-show" /*, "rescheduled" */],
+      enum: ["pending", "confirmed", "checked-in", "on-hold", "in-progress", "waiting-for-results", "in-treatment", "cancelled", "completed", "no-show", "pending-payment" /*, "rescheduled" */],
       default: "pending",
     },
 
@@ -102,6 +102,42 @@ const appointmentSchema = new mongoose.Schema(
     },
   },
   { timestamps: true }
+);
+
+appointmentSchema.index(
+    { "createdAt": 1 }, // Dựa trên trường 'createdAt' (được tạo tự động bởi timestamps: true)
+    {
+        // GHI CHÚ: Hết hạn sau 15 phút (15 * 60 = 900 giây)
+        // Bạn có thể đổi thành 10 phút (600) nếu muốn
+        expireAfterSeconds: 900, 
+        
+        // GHI CHÚ: Chỉ xóa nếu tài liệu thỏa mãn điều kiện này
+        partialFilterExpression: {
+            status: "pending-payment" 
+        }
+    }
+);
+
+appointmentSchema.index(
+    { 
+        doctor: 1, 
+        appointmentDate: 1, 
+        startTime: 1 
+    }, // Các trường cần kiểm tra trùng
+    {
+        unique: true, // Bắt buộc phải là DUY NHẤT
+        
+        // Chỉ áp dụng luật DUY NHẤT này cho các lịch hẹn "đang chiếm chỗ"
+        partialFilterExpression: { 
+            status: { $in: [
+                'pending-payment', 
+                'pending', 
+                'confirmed', 
+                'checked-in', 
+                'in-progress'
+            ]}
+        }
+    }
 );
 
 module.exports = mongoose.model("Appointment", appointmentSchema);
