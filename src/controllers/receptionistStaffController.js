@@ -1290,12 +1290,16 @@ const queueWalkInPatient = async (req, res) => {
     session.endSession();
 
     const assignedDoctor = await Doctor.findById(bestDoctorId).populate('user', 'fullName');
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate('location', 'name address')
+      .populate('doctor', 'user')
+      .populate({ path: 'doctor', populate: { path: 'user', select: 'fullName' }});
 
     res.status(201).json({
       success: true,
       message: `Xếp hàng thành công! Mời bệnh nhân đến phòng Bác sĩ ${assignedDoctor.user.fullName}.`,
       data: {
-        appointment,
+        appointment: populatedAppointment,
         doctorName: assignedDoctor.user.fullName,
         assignedTime: finalStartTime
       }

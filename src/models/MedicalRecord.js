@@ -116,6 +116,35 @@ const medicalRecordSchema = new mongoose.Schema(
       cost: { type: Number, default: 0 }
     }],
     
+    // Đơn thuốc (snapshot từ Appointment)
+    prescriptions: [{
+      medicine: { type: String },
+      dosage: { type: String },
+      frequency: { type: String },
+      // duration có thể không có do UI đã bỏ, giữ để tương thích dữ liệu cũ
+      duration: { type: String },
+      instructions: { type: String }
+    }],
+
+    // Cận lâm sàng (snapshot từ Appointment)
+    testServices: [{ type: mongoose.Schema.Types.ObjectId, ref: "ServiceDoctor" }],
+    testInstructions: { type: String },
+    testResults: { type: String },
+    imagingResults: { type: String },
+    labResults: { type: String },
+    testImages: [{ type: String }],
+
+    // Điều trị & dịch vụ (snapshot từ Appointment)
+    selectedServices: [{ type: mongoose.Schema.Types.ObjectId, ref: "Service" }],
+    treatmentNotes: { type: String },
+    homeCare: { type: String },
+
+    // Tái khám & cảnh báo (snapshot từ Appointment)
+    followUpDate: { type: Date },
+    followUpType: { type: String },
+    followUpInstructions: { type: String },
+    warnings: { type: String },
+    
     // Hình ảnh và tài liệu
     attachments: [{
       type: { 

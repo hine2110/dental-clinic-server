@@ -70,13 +70,41 @@ const createMedicalRecord = async (req, res) => {
       status: 'draft'
     });
 
+    // Sao lưu snapshot từ Appointment (nếu có)
+    if (appointment) {
+      if (Array.isArray(appointment.prescriptions) && appointment.prescriptions.length > 0) {
+        medicalRecord.prescriptions = appointment.prescriptions;
+      }
+      if (Array.isArray(appointment.testServices) && appointment.testServices.length > 0) {
+        medicalRecord.testServices = appointment.testServices;
+      }
+      if (appointment.testInstructions) medicalRecord.testInstructions = appointment.testInstructions;
+      if (appointment.testResults) medicalRecord.testResults = appointment.testResults;
+      if (appointment.imagingResults) medicalRecord.imagingResults = appointment.imagingResults;
+      if (appointment.labResults) medicalRecord.labResults = appointment.labResults;
+      if (Array.isArray(appointment.testImages) && appointment.testImages.length > 0) {
+        medicalRecord.testImages = appointment.testImages;
+      }
+      if (Array.isArray(appointment.selectedServices) && appointment.selectedServices.length > 0) {
+        medicalRecord.selectedServices = appointment.selectedServices;
+      }
+      if (appointment.treatmentNotes) medicalRecord.treatmentNotes = appointment.treatmentNotes;
+      if (appointment.homeCare) medicalRecord.homeCare = appointment.homeCare;
+      if (appointment.followUpDate) medicalRecord.followUpDate = appointment.followUpDate;
+      if (appointment.followUpType) medicalRecord.followUpType = appointment.followUpType;
+      if (appointment.followUpInstructions) medicalRecord.followUpInstructions = appointment.followUpInstructions;
+      if (appointment.warnings) medicalRecord.warnings = appointment.warnings;
+    }
+
     await medicalRecord.save();
 
     // Populate để trả về thông tin đầy đủ
     const populatedRecord = await MedicalRecord.findById(medicalRecord._id)
       .populate('patient', 'user basicInfo contactInfo')
       .populate('doctor', 'user specializations')
-      .populate('appointment', 'appointmentDate startTime')
+      .populate('appointment', 'appointmentDate startTime endTime')
+      .populate('selectedServices', 'name price')
+      .populate('testServices', 'serviceName price')
       .populate({
         path: 'patient',
         populate: {
@@ -143,7 +171,7 @@ const getDoctorMedicalRecords = async (req, res) => {
     }
 
     const medicalRecords = await MedicalRecord.find(query)
-      .populate('appointment', 'appointmentDate startTime')
+      .populate('appointment', 'appointmentDate startTime endTime')
       .populate({
         path: 'patient',
         select: 'user basicInfo contactInfo',
@@ -205,7 +233,7 @@ const getMedicalRecordById = async (req, res) => {
     })
       .populate('patient', 'user basicInfo contactInfo medicalHistory allergies')
       .populate('doctor', 'user specializations')
-      .populate('appointment', 'appointmentDate startTime reasonForVisit')
+      .populate('appointment', 'appointmentDate startTime endTime reasonForVisit')
       .populate({
         path: 'patient',
         populate: {
@@ -282,7 +310,7 @@ const updateMedicalRecord = async (req, res) => {
       { new: true, runValidators: true }
     )
       .populate('patient', 'user basicInfo contactInfo')
-      .populate('appointment', 'appointmentDate startTime')
+      .populate('appointment', 'appointmentDate startTime endTime')
       .populate({
         path: 'patient',
         populate: {
@@ -376,19 +404,45 @@ const completeMedicalRecord = async (req, res) => {
       });
     }
 
-    const medicalRecord = await MedicalRecord.findOneAndUpdate(
-      { 
-        _id: recordId, 
-        doctor: doctor._id 
-      },
-      { 
-        status: 'completed',
-        lastUpdatedBy: doctor._id
-      },
-      { new: true, runValidators: true }
-    )
+    // Đồng bộ snapshot từ Appointment trước khi hoàn thành
+    const record = await MedicalRecord.findOne({ _id: recordId, doctor: doctor._id }).populate('appointment');
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hồ sơ bệnh án hoặc không có quyền truy cập"
+      });
+    }
+    if (record.appointment) {
+      const appt = await Appointment.findById(record.appointment);
+      if (appt) {
+        if (Array.isArray(appt.prescriptions) && appt.prescriptions.length > 0) {
+          record.prescriptions = appt.prescriptions;
+        }
+        record.testServices = appt.testServices || record.testServices;
+        record.testInstructions = appt.testInstructions || record.testInstructions;
+        record.testResults = appt.testResults || record.testResults;
+        record.imagingResults = appt.imagingResults || record.imagingResults;
+        record.labResults = appt.labResults || record.labResults;
+        record.testImages = appt.testImages && appt.testImages.length ? appt.testImages : record.testImages;
+        record.selectedServices = appt.selectedServices || record.selectedServices;
+        record.treatmentNotes = appt.treatmentNotes || record.treatmentNotes;
+        record.homeCare = appt.homeCare || record.homeCare;
+        record.followUpDate = appt.followUpDate || record.followUpDate;
+        record.followUpType = appt.followUpType || record.followUpType;
+        record.followUpInstructions = appt.followUpInstructions || record.followUpInstructions;
+        record.warnings = appt.warnings || record.warnings;
+      }
+    }
+
+    record.status = 'completed';
+    record.lastUpdatedBy = doctor._id;
+    await record.save();
+
+    const medicalRecord = await MedicalRecord.findById(record._id)
       .populate('patient', 'user basicInfo contactInfo')
-      .populate('appointment', 'appointmentDate startTime')
+      .populate('appointment', 'appointmentDate startTime endTime')
+      .populate('selectedServices', 'name price')
+      .populate('testServices', 'serviceName price')
       .populate({
         path: 'patient',
         populate: {
@@ -397,12 +451,7 @@ const completeMedicalRecord = async (req, res) => {
         }
       });
 
-    if (!medicalRecord) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy hồ sơ bệnh án hoặc không có quyền truy cập"
-      });
-    }
+    // medicalRecord chắc chắn tồn tại do đã kiểm tra ở trên
 
     res.status(200).json({
       success: true,
