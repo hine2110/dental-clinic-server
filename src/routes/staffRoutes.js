@@ -5,7 +5,7 @@ const storeKepperController = require("../controllers/storeKepperController");
 const { authenticate } = require("../middlewares/auth");
 const { checkStaffRole, checkPermission, checkStaffType } = require("../middlewares/staff");
 const { route } = require("./managementRoutes");
-const { upload, handleUploadError } = require("../middlewares/upload");
+const { uploadProfile, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực cho tất cả routes staff
 router.use(authenticate);
@@ -125,7 +125,7 @@ router.get("/receptionist/profile/self",
 // Chỉnh sửa hồ sơ cá nhân (receptionist)
 router.put("/receptionist/profile",
   checkPermission("editOwnProfile"),
-  upload.single("avatar"), 
+  uploadProfile.single("avatar"), 
   handleUploadError,
   receptionistController.editOwnProfile
 );
@@ -200,7 +200,7 @@ router.get("/store/profile/self",
 // Chỉnh sửa hồ sơ cá nhân (store keeper)
 router.put("/store/profile",
   checkStaffType("storeKepper"),
-  upload.single("avatar"), 
+  uploadProfile.single("avatar"), 
   handleUploadError,
   storeKepperController.editOwnProfileStore
 );

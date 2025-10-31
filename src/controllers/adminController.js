@@ -1,4 +1,4 @@
-const { User, Staff, Doctor, Admin, Management } = require("../models");
+const { User, Staff, Doctor, Admin, Management, Patient } = require("../models");
 
 const createStaffAccount = async (req, res) => {
   try {
@@ -45,13 +45,19 @@ const createStaffAccount = async (req, res) => {
       temporaryPassword || `temp${Math.random().toString(36).slice(-8)}`;
 
     // Create user account
-    const user = await User.create({
+    const userData = {
       email,
       password: plainPassword,
       role,
       fullName: `${firstName} ${lastName}`.trim(),
       phone,
-    });
+    };
+    if (req.file) {
+      userData.avatar = req.file.path; 
+    }
+
+    // Create user account
+    const user = await User.create(userData);
 
     // Create corresponding profile based on role
     if (role === "staff") {
@@ -130,7 +136,16 @@ const createStaffAccount = async (req, res) => {
         providedDoctorId ||
         `DOC${Date.now()}${Math.random().toString(36).slice(-4).toUpperCase()}`;
 
-      // Create Doctor profile aligned with current schema
+      const { 
+        specializations, 
+        yearsOfPractice = 0 
+      } = req.body; 
+
+      const doctorSpecializations =
+        Array.isArray(specializations) && specializations.length > 0
+          ? specializations
+          : ["General Dentistry"];
+
       await Doctor.create({
         doctorId,
         user: user._id,
@@ -138,13 +153,14 @@ const createStaffAccount = async (req, res) => {
           medicalLicense: req.body.medicalLicense || "PENDING",
           dentalLicense: req.body.dentalLicense || "PENDING",
         },
-        specializations:
-          Array.isArray(req.body.specializations) &&
-          req.body.specializations.length > 0
-            ? req.body.specializations
-            : ["General Dentistry"],
+        specializations: doctorSpecializations, 
+
         isAcceptingNewPatients: true,
         isActive: true,
+        experience: {
+          yearsOfPractice: yearsOfPractice, // <-- Bây giờ biến này đã tồn tại
+          previousPositions: [], 
+        }
       });
     } else if (role === "management") {
       // Create Management profile with sensible defaults
@@ -167,6 +183,11 @@ const createStaffAccount = async (req, res) => {
           viewRevenueWeekly: true,
           viewRevenueMonthly: true,
           viewRevenueYearly: true,
+          getAllLocations: false,
+          createLocation: false,
+          updateLocation: false,
+          deleteLocation: false,
+          viewLocation: false,
         },
       });
     }
@@ -292,7 +313,7 @@ const getAllUsers = async (req, res) => {
         // Add profile-specific information based on role
         if (user.role === "doctor") {
           const doctorProfile = await Doctor.findOne({ user: user._id }).select(
-            "doctorId specializations consultationFee license"
+            "doctorId specializations consultationFee experience credentials"
           );
           userObj.doctorProfile = doctorProfile;
         } else if (user.role === "staff") {
@@ -305,6 +326,11 @@ const getAllUsers = async (req, res) => {
             "permissions"
           );
           userObj.adminProfile = adminProfile;
+        } else if (user.role === "patient") { 
+          const patientProfile = await Patient.findOne({ user: user._id }).select(
+            "contactInfo"
+          );
+          userObj.patientProfile = patientProfile;
         }
 
         return userObj;

@@ -12,7 +12,7 @@ const {
   getImage,
 } = require("../controllers/uploadController");
 const { authenticate, authorize } = require("../middlewares/auth");
-const { upload, handleUploadError } = require("../middlewares/upload");
+const { uploadService, uploadProfile, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực cho tất cả routes admin
 
@@ -40,8 +40,12 @@ router.get("/users", adminController.getAllUsers);
 router.patch("/users/:id/toggle-status", adminController.toggleUserStatus);
 
 // POST /api/admin/create-account - Tạo tài khoản staff/doctor
-router.post("/create-account", adminController.createStaffAccount);
-
+router.post(
+  "/create-account",
+  uploadProfile.single("avatar"), 
+  handleUploadError,
+  adminController.createStaffAccount
+);
 // ==================== QUẢN LÝ SERVICES ====================
 
 // GET /api/admin/services - Lấy danh sách tất cả services
@@ -56,7 +60,7 @@ router.get("/services/:id", serviceController.getServiceById);
 // POST /api/admin/services - Tạo service mới
 router.post(
   "/services",
-  upload.single("image"),
+  uploadService.single("image"), 
   handleUploadError,
   serviceController.createService
 );
@@ -64,7 +68,7 @@ router.post(
 // PUT /api/admin/services/:id - Cập nhật service
 router.put(
   "/services/:id",
-  upload.single("image"),
+  uploadService.single("image"), 
   handleUploadError,
   serviceController.updateService
 );
@@ -83,7 +87,7 @@ router.delete("/services/:id/hard", serviceController.hardDeleteService);
 // POST /api/admin/upload/image - Upload ảnh
 router.post(
   "/upload/image",
-  upload.single("image"),
+  uploadService.single("image"),
   handleUploadError,
   uploadImage
 );

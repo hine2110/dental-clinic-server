@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate, authorize } = require('../middlewares/auth');
-const { upload, handleUploadError } = require('../middlewares/upload');
+const { uploadService, uploadProfile, handleUploadError } = require("../middlewares/upload");
 const {
   uploadImage,
   deleteImage,
@@ -257,7 +257,7 @@ router.get('/medical-records/patient/:patientId', getPatientMedicalRecords);
  */
 router.post(
   '/upload/image',
-  upload.single('image'),
+  uploadService.single('image'),
   handleUploadError,
   uploadImage
 );

@@ -8,20 +8,31 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Cấu hình storage cho multer
-const storage = multer.diskStorage({
+// === Cấu hình Tên file cho Services ===
+const serviceStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Tạo tên file unique với timestamp
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
-    cb(null, "service-" + uniqueSuffix + ext);
+    cb(null, "service-" + uniqueSuffix + ext); // <--- TIỀN TỐ "service-"
   },
 });
 
-// Filter để chỉ cho phép upload ảnh
+// === Cấu hình Tên file cho Profiles/Avatars ===
+const profileStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, "profile-" + uniqueSuffix + ext); // <--- TIỀN TỐ "profile-"
+  },
+});
+
+// Filter để chỉ cho phép upload ảnh (Dùng chung)
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const extname = allowedTypes.test(
@@ -36,16 +47,25 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Cấu hình multer
-const upload = multer({
-  storage: storage,
+// Cấu hình multer cho SERVICES
+const uploadService = multer({
+  storage: serviceStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // Giới hạn 5MB
+    fileSize: 5 * 1024 * 1024, // 5MB
   },
   fileFilter: fileFilter,
 });
 
-// Middleware xử lý lỗi upload
+// Cấu hình multer cho PROFILES
+const uploadProfile = multer({
+  storage: profileStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: fileFilter,
+});
+
+// Middleware xử lý lỗi upload (Dùng chung)
 const handleUploadError = (error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === "LIMIT_FILE_SIZE") {
@@ -67,6 +87,7 @@ const handleUploadError = (error, req, res, next) => {
 };
 
 module.exports = {
-  upload,
+  uploadService,
+  uploadProfile, 
   handleUploadError,
 };

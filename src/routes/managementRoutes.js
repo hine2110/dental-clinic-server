@@ -3,7 +3,7 @@ const router = express.Router();
 const managementController = require("../controllers/managementController");
 const { authenticate } = require("../middlewares/auth");
 const { checkManagementRole, checkManagementPermission } = require("../middlewares/management");
-const { upload, handleUploadError } = require("../middlewares/upload");
+const { uploadProfile, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực và kiểm tra staff
 router.use(authenticate);
@@ -14,7 +14,7 @@ router.get("/profile",managementController.getManagerProfile);
 
 // PUT /api/management/profile - Cập nhật hồ sơ cá nhân (phone/avatar)
 router.put("/profile",
-  upload.single("avatar"), // Tên field là 'avatar'
+  uploadProfile.single("avatar"), // Tên field là 'avatar'
   handleUploadError,         // Xử lý lỗi upload
   managementController.updateManagerProfile
 );
