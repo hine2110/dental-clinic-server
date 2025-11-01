@@ -152,6 +152,8 @@ const getDoctorAppointments = async (req, res) => {
           select: 'fullName email phone'
         }
       })
+      // Walk-in không có schedule, cần populate trực tiếp location
+      .populate('location', 'name address')
       .populate('schedule', 'location startTime endTime')
       .populate({
         path: 'schedule',
@@ -997,6 +999,7 @@ const getAppointmentDetails = async (req, res) => {
       _id: id,
       doctor: doctor._id
     })
+    .populate('location', 'name address')
     .populate({
       path: 'patient',
       select: 'patientId basicInfo contactInfo medicalHistory allergies insuranceInfo',
@@ -1117,6 +1120,24 @@ const updateAppointmentStatus = async (req, res) => {
       }
     });
 
+    // Nếu chuyển sang completed mà chưa có endTime, tự động ghi lại giờ kết thúc hiện tại (Asia/Ho_Chi_Minh)
+    if (newStatus === 'completed' && currentStatus !== 'completed') {
+      try {
+        if (!appointment.endTime) {
+          const nowVN = new Date();
+          // Lấy giờ theo múi giờ VN, định dạng HH:mm
+          const endTimeVN = nowVN.toLocaleTimeString('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Asia/Ho_Chi_Minh'
+          });
+          appointment.endTime = endTimeVN;
+        }
+      } catch (_) {
+        // Bỏ qua lỗi định dạng thời gian, không làm hỏng flow
+      }
+    }
+
     await appointment.save();
 
     // ✅ Tự động tạo Medical Record khi hoàn thành khám bệnh
@@ -1196,7 +1217,19 @@ const updateAppointmentStatus = async (req, res) => {
           
           // Người tạo
           createdBy: doctor._id,
-          lastUpdatedBy: doctor._id
+          lastUpdatedBy: doctor._id,
+
+          // Snapshot thêm: đơn thuốc và các trường điều trị/cận lâm sàng
+          prescriptions: Array.isArray(appointment.prescriptions) ? appointment.prescriptions : [],
+          selectedServices: Array.isArray(appointment.selectedServices) ? appointment.selectedServices : [],
+          treatmentNotes: appointment.treatmentNotes || '',
+          homeCare: appointment.homeCare || '',
+          testServices: Array.isArray(appointment.testServices) ? appointment.testServices : [],
+          testInstructions: appointment.testInstructions || '',
+          testResults: appointment.testResults || '',
+          imagingResults: appointment.imagingResults || '',
+          labResults: appointment.labResults || '',
+          testImages: Array.isArray(appointment.testImages) ? appointment.testImages : []
         });
         
         console.log('✅ Created medical record for appointment:', appointment.appointmentId);
@@ -1228,7 +1261,7 @@ const updateAppointmentStatus = async (req, res) => {
 const getMedicines = async (req, res) => {
   try {
     const medicines = await Medicine.find({ isActive: true })
-      .select('name description unit price')
+      .select('name description unit price currentStock')
       .sort({ name: 1 });
 
     res.status(200).json({

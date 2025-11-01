@@ -15,6 +15,11 @@ const socketService = require('./src/services/socket');
 
 const connectDB = require("./src/config/database");
 
+// Set JWT_SECRET if not provided
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = 'your-super-secret-jwt-key-here-123456789';
+}
+
 const app = express();
 
 // BƯỚC 2: Tạo server HTTP và gắn Express app vào
@@ -49,7 +54,6 @@ const locationController = require('./src/controllers/locationController');
 
 app.get("/", (req, res) => res.json({ message: "Dental Clinic Management API" }));
 app.get("/health", (req, res) => res.status(200).json({ status: "OK" }));
-
 app.get('/api/locations', locationController.getActiveLocations);
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);

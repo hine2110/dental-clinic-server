@@ -3,80 +3,77 @@ const router = express.Router();
 const receptionistController = require("../controllers/receptionistStaffController");
 const storeKepperController = require("../controllers/storeKepperController");
 const { authenticate } = require("../middlewares/auth");
+// (Ghi chú: checkPermission không còn được sử dụng ở đây, nhưng vẫn import)
 const { checkStaffRole, checkPermission, checkStaffType } = require("../middlewares/staff");
 const { route } = require("./managementRoutes");
 const { uploadProfile, handleUploadError } = require("../middlewares/upload");
 
 // Middleware xác thực cho tất cả routes staff
 router.use(authenticate);
-router.use(checkStaffRole);
+router.use(checkStaffRole); // Vẫn giữ để xác nhận là staff và lấy req.staff
 
 router.get("/my-locations-today", receptionistController.getMyLocationsForToday);
 
 
 // ==================== RECEPTIONIST ROUTES ====================
+// (Tất cả đã được đồng bộ sang checkStaffType)
 
-// (MỚI) Tối ưu 1: Tìm bệnh nhân bằng CCCD
+// Tối ưu 1: Tìm bệnh nhân bằng CCCD
 router.get("/receptionist/patients/find-by-idcard/:idCard",
-  checkPermission("viewPatientInfo"), // Tái sử dụng quyền xem thông tin
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.findPatientByIdCard
 );
 
-// (MỚI) Tối ưu 2: Lấy bác sĩ rảnh theo (cơ sở, ngày, giờ)
+// Tối ưu 2: Lấy bác sĩ rảnh theo (cơ sở, ngày, giờ)
 router.get("/receptionist/available-doctors",
-  checkPermission("editPatientInfo"), // Tái sử dụng quyền
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.getAvailableDoctorsForApi
 );
 
-// (MỚI) Tối ưu 1: Tìm bệnh nhân bằng CCCD
-router.get("/receptionist/patients/find-by-idcard/:idCard",
-  checkPermission("viewPatientInfo"), // Tái sử dụng quyền
-  receptionistController.findPatientByIdCard
-);
+// (Route trùng lặp, đã xóa bớt 1)
 
-// (MỚI) Tối ưu 6: Xếp hàng tự động cho khách vãng lai
+// Tối ưu 6: Xếp hàng tự động cho khách vãng lai
 router.post("/receptionist/queue-walk-in-patient",
-  checkPermission("editPatientInfo"), // Tái sử dụng quyền (hoặc tạo quyền "createAppointment")
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.queueWalkInPatient
 );
 
 // Xem lịch làm việc của chính receptionist
 router.get("/receptionist/schedules/self",
-  checkPermission("viewReceptionistSchedule"),
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.viewReceptionistSchedule
 );
 
 // Xem thông tin bệnh nhân
 router.get("/receptionist/patients/:patientId",
-  checkPermission("viewPatientInfo"),
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.viewPatientInfo
 );
 
-// === (PHẦN THANH TOÁN ĐÃ CẬP NHẬT THEO YÊU CẦU) ===
+// === (PHẦN THANH TOÁN - Giữ nguyên vì đã dùng checkStaffType) ===
 router.get("/receptionist/payment-queue",
-  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  checkStaffType("receptionist"), 
   receptionistController.getPaymentQueue
 );
 
-// (MỚI) Lấy tất cả dịch vụ để thanh toán
 router.get("/receptionist/billing-services",
-  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  checkStaffType("receptionist"), 
   receptionistController.getServicesForBilling
 );
 
 router.post("/receptionist/invoices/create",
-  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  checkStaffType("receptionist"), 
   receptionistController.createDraftInvoice
 );
 
-// (MỚI) Cập nhật giỏ hàng (thêm/bớt dịch vụ)
 router.put("/receptionist/invoices/:invoiceId/items",
-  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
+  checkStaffType("receptionist"), 
   receptionistController.updateInvoiceItems
 );
 
+// Tạo lịch hẹn vãng lai (Cũ)
 router.post("/receptionist/walk-in-appointment",
-  checkPermission("editPatientInfo"), // Tạm dùng quyền này, bạn có thể tạo quyền 'createAppointment'
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.createWalkInAppointment
 );
 
@@ -90,7 +87,6 @@ router.post("/receptionist/invoices/:invoiceId/generate-qr",
   receptionistController.generateTransferQrCode
 );
 
-// (MỚI) Hoàn tất thanh toán
 router.post("/receptionist/invoices/:invoiceId/finalize",
   checkStaffType("receptionist"), 
   receptionistController.finalizePayment
@@ -98,33 +94,36 @@ router.post("/receptionist/invoices/:invoiceId/finalize",
 
 router.get("/receptionist/invoices/history",
   checkStaffType("receptionist"), 
-  receptionistController.getInvoiceHistory // <-- Hàm controller mới
+  receptionistController.getInvoiceHistory
 );
 
 // Xem danh sách lịch hẹn (tất cả)
 router.get("/receptionist/appointments",
-  checkPermission("viewPatientInfo"),
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.getAppointments
 );
+
 // Cập nhật trạng thái lịch hẹn (Check-in, Hủy)
 router.patch("/receptionist/appointments/:id/status",
-  checkPermission("editPatientInfo"),
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.updateAppointmentStatus
 );
+
 // Tạo link để bệnh nhân tự đổi lịch hẹn
 router.post("/receptionist/appointments/:id/generate-reschedule-link",
-  checkPermission("editPatientInfo"), // Giả định bạn có quyền này, hoặc tạo quyền mới 'manageAppointments'
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.generateRescheduleLink
 );
 
+// Lấy hồ sơ cá nhân (receptionist)
 router.get("/receptionist/profile/self",
-  checkPermission("editOwnProfile"), // Dùng chung quyền
+  checkStaffType("receptionist"), // <-- ĐÃ THAY ĐỔI
   receptionistController.getOwnProfile
 );
 
 // Chỉnh sửa hồ sơ cá nhân (receptionist)
 router.put("/receptionist/profile",
-  checkPermission("editOwnProfile"),
+  checkStaffType("receptionist"),
   uploadProfile.single("avatar"), 
   handleUploadError,
   receptionistController.editOwnProfile
@@ -132,18 +131,12 @@ router.put("/receptionist/profile",
 
 
 // ==================== STORE KEEPER ROUTES ====================
+// (Toàn bộ phần này giữ nguyên vì đã sử dụng checkStaffType("storeKepper"))
 
-// Xem lịch làm việc của store keeper (self)
 router.get("/store/schedules/self",
   checkStaffType("storeKepper"),
   storeKepperController.viewStoreKepperSchedule
 );
-
-// // Xem đơn thuốc
-// router.get("/store/prescriptions",
-//   checkPermission("viewPrescriptions"),
-//   storeKepperController.viewPrescriptions
-// );
 
 // INVENTORY - Thuốc
 router.get("/store/inventory",
@@ -164,17 +157,14 @@ router.delete("/store/inventory/:medicineId",
 );
 
 // EQUIPMENT
-// Báo cáo thiết bị hỏng
 router.post("/store/equipment/issues",
   checkStaffType("storeKepper"),
   storeKepperController.reportEquipment
 );
-
 router.get("/store/equipment/issues",
   checkStaffType("storeKepper"),
   storeKepperController.viewEquipmentIssues
 );
-
 router.get("/store/equipment",
   checkStaffType("storeKepper"),
   storeKepperController.viewEquipment
@@ -192,12 +182,11 @@ router.delete("/store/equipment/:equipmentId",
   storeKepperController.deleteEquipment
 );
 
+// Hồ sơ cá nhân (store keeper)
 router.get("/store/profile/self",
-  checkStaffType("storeKepper"), // Dùng chung quyền
+  checkStaffType("storeKepper"), 
   storeKepperController.getOwnProfile
 );
-
-// Chỉnh sửa hồ sơ cá nhân (store keeper)
 router.put("/store/profile",
   checkStaffType("storeKepper"),
   uploadProfile.single("avatar"), 

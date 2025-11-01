@@ -12,8 +12,9 @@ const Prescription = require("../models/Prescription");
 const Medicine = require("../models/Medicine");
 const Invoice = require("../models/Invoice");
 const User = require("../models/User");
-const Patient = require("../models/Patient"); // <-- 1. ĐÃ THÊM LẠI IMPORT BỊ THIẾU
+const Patient = require("../models/Patient");
 const mongoose = require("mongoose");
+const ServiceDoctor = require("../models/ServiceDoctor");
 
 const BANK_ID = "970422"; // Đây là BIN của MBBank. Tra cứu BIN ngân hàng của bạn
 const ACCOUNT_NUMBER = "0935655266"; // Thay bằng STK thật của bạn
@@ -23,16 +24,9 @@ const ACCOUNT_NAME = "NGUYEN TRAN GIA HUY"; // Tên chủ tài khoản
 // 5. Xem danh sách lịch hẹn 
 const getAppointments = async (req, res) => {
   try {
-    // === 1. LẤY ID NHÂN VIÊN ===
-    // (Giả định middleware 'checkStaffRole' đã thêm req.staff)
     const staffId = req.staff._id; 
-
-    // === 2. TÌM TẤT CẢ CƠ SỞ ĐƯỢC PHÂN CÔNG ===
-    // Quét StaffSchedule để xem nhân viên này "thuộc" về những cơ sở nào
     const staffSchedules = await StaffSchedule.find({ staff: staffId }).select('location');
     const locationIds = [...new Set(staffSchedules.map(s => s.location.toString()))];
-
-    // Nếu nhân viên không được phân công ở đâu, trả về rỗng
     if (locationIds.length === 0) {
       return res.status(200).json({
         success: true,
@@ -41,24 +35,17 @@ const getAppointments = async (req, res) => {
         pagination: { currentPage: 1, totalPages: 0, totalAppointments: 0 }
       });
     }
-
-    // === 3. XÂY DỰNG QUERY (ĐÃ THÊM FILTER CƠ SỞ) ===
     const page = parseInt(req.query.page) || 1;
     const limit = 10;
     const skip = (page - 1) * limit;
     const { status, date, doctorId, search } = req.query;
-
     let query = {};
-    
-    // THÊM MỚI: Lọc theo cơ sở được phân công
     query.location = { $in: locationIds }; 
-
-    // (Logic cũ giữ nguyên)
     if (status) {
       query.status = status;
     } 
     else {
-      query.status = { $in: ['pending-payment', 'confirmed', 'rescheduled'] };
+      query.status = { $in: ['confirmed', 'rescheduled'] }; 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       query.appointmentDate = { $gte: today };
@@ -81,10 +68,8 @@ const getAppointments = async (req, res) => {
       const patientIds = matchingPatients.map(p => p._id);
       query.patient = { $in: patientIds };
     }
-    
-    // === 4. THỰC THI QUERY ===
     const [appointments, totalAppointments] = await Promise.all([
-      Appointment.find(query) // Query đã được lọc
+      Appointment.find(query) 
         .populate({
           path: 'doctor',
           populate: { path: 'user', select: 'fullName' }
@@ -93,11 +78,11 @@ const getAppointments = async (req, res) => {
           path: 'patient',
           select: 'basicInfo'
         })
-        .populate('location', 'name') // (Tùy chọn) Thêm populate location
+        .populate('location', 'name')
         .sort({ appointmentDate: 1, startTime: 1 })
         .skip(skip) 
         .limit(limit), 
-      Appointment.countDocuments(query) // Đếm query đã lọc
+      Appointment.countDocuments(query)
     ]);
     
     const totalPages = Math.ceil(totalAppointments / limit);
@@ -152,14 +137,6 @@ const viewPrescriptions = async (req, res) => {
 // ==================== HELPER FUNCTIONS ====================
 
 
-
-// 9. Gửi hóa đơn cho bệnh nhân dựa trên prescription
-// Body: { prescriptionId, patientTakesMedicines: boolean }
-/**
- * Tạo hóa đơn từ một đơn thuốc.
- * Có thể lựa chọn bao gồm thuốc hoặc không.
- * Nếu bao gồm thuốc, sẽ tự động xuất thuốc và trừ tồn kho.
- */
 // (HÀM MỚI) 1. Lấy danh sách bệnh nhân "Chờ thanh toán"
 const getPaymentQueue = async (req, res) => {
   try {
@@ -191,10 +168,28 @@ const getPaymentQueue = async (req, res) => {
 // (HÀM MỚI) 2. Lấy tất cả dịch vụ để nhân viên chọn
 const getServicesForBilling = async (req, res) => {
   try {
-    const services = await Service.find({ isActive: true }).select("name price category");
+    const services = await Service.find({ isActive: true })
+      .select("name price category")
+      .lean(); 
+    const serviceDoctors = await ServiceDoctor.find({ isActive: true })
+      .select("serviceName price")
+      .lean(); 
+    const standardizedServices = services.map(s => ({
+      ...s,
+      itemModel: 'Service'
+    }));
+    const standardizedServiceDoctors = serviceDoctors.map(s => ({
+      _id: s._id,
+      name: s.serviceName,
+      price: s.price,
+      category: 'Diagnostic',
+      itemModel: 'ServiceDoctor'
+    }));
+    const allServices = [...standardizedServices, ...standardizedServiceDoctors];
+
     res.status(200).json({
       success: true,
-      data: services,
+      data: allServices,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
@@ -206,16 +201,11 @@ const generateInvoiceId = () => {
   return `INV-${Date.now().toString().slice(-4)}-${randomPart}`;
 };
 
-// (HÀM MỚI - THAY THẾ createInvoice CŨ) 3. Bắt đầu phiên thanh toán (Tạo hóa đơn PENDING)
 const createDraftInvoice = async (req, res) => {
   const { appointmentId } = req.body;
-  // Sử dụng req.staff._id như trong code cũ của bạn
   const staffId = req.staff._id; 
-
   try {
-    // 1. Kiểm tra xem hóa đơn đã tồn tại cho cuộc hẹn này chưa
     let invoice = await Invoice.findOne({ appointment: appointmentId });
-
     if (invoice) {
       if (invoice.status === "PENDING") {
         return res.status(200).json({
@@ -228,20 +218,69 @@ const createDraftInvoice = async (req, res) => {
         return res.status(400).json({ success: false, message: "Hóa đơn này đã được thanh toán." });
       }
     }
-
-    // 2. Nếu chưa có, tạo hóa đơn mới
     const appointment = await Appointment.findById(appointmentId);
     if (!appointment) {
       return res.status(404).json({ success: false, message: "Không tìm thấy cuộc hẹn." });
     }
+    let invoiceItems = [];
+    const serviceIds = appointment.selectedServices || [];
+    const testServiceIds = appointment.testServices || [];
+    if (serviceIds.length > 0) {
+      const servicesFromDB = await Service.find({ '_id': { $in: serviceIds }, 'isActive': true });
+      const serviceMap = servicesFromDB.reduce((map, service) => {
+          map[service._id.toString()] = service;
+          return map;
+      }, {});
+      const serviceCounts = serviceIds.reduce((counts, id) => {
+          counts[id.toString()] = (counts[id.toString()] || 0) + 1;
+          return counts;
+      }, {});
+      
+      for (const id in serviceCounts) {
+          if (serviceMap[id]) {
+              const service = serviceMap[id];
+              invoiceItems.push({
+                  item: service._id,
+                  itemModel: 'Service',
+                  quantity: serviceCounts[id],
+                  priceAtPayment: service.price,
+                  nameAtPayment: service.name,
+              });
+          }
+      }
+    }
+    if (testServiceIds.length > 0) {
+      const serviceDoctorsFromDB = await ServiceDoctor.find({ '_id': { $in: testServiceIds }, 'isActive': true });
+      const serviceDoctorMap = serviceDoctorsFromDB.reduce((map, service) => {
+          map[service._id.toString()] = service;
+          return map;
+      }, {});
+      const testServiceCounts = testServiceIds.reduce((counts, id) => {
+          counts[id.toString()] = (counts[id.toString()] || 0) + 1;
+          return counts;
+      }, {});
+
+      for (const id in testServiceCounts) {
+          if (serviceDoctorMap[id]) {
+              const service = serviceDoctorMap[id];
+              invoiceItems.push({
+                  item: service._id,
+                  itemModel: 'ServiceDoctor', 
+                  quantity: testServiceCounts[id],
+                  priceAtPayment: service.price,
+                  nameAtPayment: service.serviceName, 
+              });
+          }
+      }
+    }
 
     invoice = new Invoice({
-      invoiceId: generateInvoiceId(),
+      invoiceId: generateInvoiceId(), 
       appointment: appointmentId,
       patient: appointment.patient,
       staff: staffId,
       status: "PENDING",
-      items: [], // Giỏ hàng trống
+      items: invoiceItems, 
     });
 
     await invoice.save();
@@ -256,11 +295,10 @@ const createDraftInvoice = async (req, res) => {
   }
 };
 
-// (HÀM MỚI) 4. Cập nhật "Giỏ hàng" (Thêm/Sửa/Xóa dịch vụ)
+
 const updateInvoiceItems = async (req, res) => {
   const { invoiceId } = req.params;
-  const { items } = req.body; // items là một mảng: [{ itemId: 'serviceId1', quantity: 2 }, ...]
-
+  const { items } = req.body; 
   try {
     const invoice = await Invoice.findById(invoiceId);
     if (!invoice) {
@@ -269,46 +307,67 @@ const updateInvoiceItems = async (req, res) => {
     if (invoice.status === "PAID") {
       return res.status(400).json({ success: false, message: "Không thể cập nhật hóa đơn đã thanh toán." });
     }
-
     const updatedItems = [];
+    const serviceIds = items
+      .filter(i => i.itemModel === 'Service')
+      .map(i => i.itemId);
+    const serviceDoctorIds = items
+      .filter(i => i.itemModel === 'ServiceDoctor')
+      .map(i => i.itemId);
+
+    const [services, serviceDoctors] = await Promise.all([
+        Service.find({ '_id': { $in: serviceIds } }).lean(),
+        ServiceDoctor.find({ '_id': { $in: serviceDoctorIds } }).lean()
+    ]);
+    
+    const serviceMap = services.reduce((map, s) => (map[s._id.toString()] = s, map), {});
+    const serviceDoctorMap = serviceDoctors.reduce((map, s) => (map[s._id.toString()] = s, map), {});
+
     for (const item of items) {
-      const service = await Service.findById(item.itemId);
-      if (service) {
+      if (item.itemModel === 'Service' && serviceMap[item.itemId]) {
+        const service = serviceMap[item.itemId];
         updatedItems.push({
           item: service._id,
+          itemModel: 'Service',
           quantity: item.quantity,
-          priceAtPayment: service.price, // Lấy giá gốc từ DB
-          nameAtPayment: service.name,   // Lấy tên gốc từ DB
+          priceAtPayment: service.price,
+          nameAtPayment: service.name,
+        });
+      } else if (item.itemModel === 'ServiceDoctor' && serviceDoctorMap[item.itemId]) {
+        const service = serviceDoctorMap[item.itemId];
+        updatedItems.push({
+          item: service._id,
+          itemModel: 'ServiceDoctor',
+          quantity: item.quantity,
+          priceAtPayment: service.price,
+          nameAtPayment: service.serviceName,
         });
       }
     }
 
     invoice.items = updatedItems;
-    await invoice.save(); // pre('save') hook sẽ tự động tính lại totalAmount
-
+    await invoice.save(); 
     res.status(200).json({
       success: true,
       message: "Cập nhật giỏ hàng thành công.",
       data: await invoice.populate('items.item'),
     });
   } catch (error) {
+    console.error("Error in updateInvoiceItems:", error);
     res.status(500).json({ success: false, message: "Lỗi máy chủ: " + error.message });
   }
 };
 
 
-// (HÀM MỚI) 5. Hoàn tất thanh toán
-// (HÀM MỚI) 5. Hoàn tất thanh toán (ĐÃ CẬP NHẬT HOÀN CHỈNH)
 const finalizePayment = async (req, res) => {
   const { invoiceId } = req.params;
-  
-  // 1. Lấy TẤT CẢ dữ liệu từ frontend
+
   const { 
     paymentMethod, 
     amountGiven, 
     discountCode, 
-    originalTotal, // = totalAmount from items
-    finalTotal      // = finalAmount (total - discount)
+    originalTotal, 
+    finalTotal     
   } = req.body; 
 
   try {
@@ -321,44 +380,27 @@ const finalizePayment = async (req, res) => {
     }
 
     let calculatedDiscountAmount = 0;
-    let calculatedFinalTotal = invoice.totalAmount; // totalAmount là tiền gốc
-
-    // 2. Xác thực lại discount (BẮT BUỘC VÌ BẢO MẬT)
+    let calculatedFinalTotal = invoice.totalAmount; 
     if (discountCode) {
-      // (Bạn phải import Discount model ở đầu file)
+
       const discount = await Discount.findOne({ code: discountCode, isActive: true });
       if (discount) {
-        // (Thêm kiểm tra ngày hết hạn, lượt dùng... nếu cần)
-        // if (discount.endDate && discount.endDate < Date.now()) {
-        //    return res.status(400).json({ success: false, message: "Mã giảm giá đã hết hạn (lỗi server)." });
-        // }
-
-        // Tính toán lại discount dựa trên tiền gốc trong DB
         calculatedDiscountAmount = (invoice.totalAmount * discount.discountPercentage) / 100;
         calculatedFinalTotal = invoice.totalAmount - calculatedDiscountAmount;
-
-        // So sánh với số frontend gửi lên, nếu sai (do làm tròn) thì báo lỗi
-        if (Math.abs(calculatedFinalTotal - finalTotal) > 1) { // Chênh lệch 1đ
+        if (Math.abs(calculatedFinalTotal - finalTotal) > 1) {
           return res.status(400).json({ 
             success: false, 
             message: `Tính toán giảm giá phía server (ra ${calculatedFinalTotal}) không khớp với client (gửi ${finalTotal}). Vui lòng F5 thử lại.`
           });
         }
-        
-        // Gán vào hóa đơn để lưu
         invoice.discountCode = discount.code;
         invoice.discountAmount = calculatedDiscountAmount;
-
-        // (TùY CHỌN: Tăng lượt sử dụng mã)
-        // discount.usageCount += 1;
-        // await discount.save();
-
       } else {
          return res.status(400).json({ success: false, message: "Mã giảm giá không hợp lệ (lỗi server)." });
       }
     }
 
-    let change = 0; // Tiền thối
+    let change = 0; 
 
     // 3. DÙNG "calculatedFinalTotal" (đã xác thực) để kiểm tra tiền mặt
     if (paymentMethod === 'cash') {
@@ -591,32 +633,22 @@ const viewReceptionistSchedule = async (req, res) => {
 const generateTransferQrCode = async (req, res) => {
   try {
     const { invoiceId } = req.params;
+    const { amount } = req.body;
     const invoice = await Invoice.findById(invoiceId);
-
     if (!invoice || invoice.status === 'PAID') {
       return res.status(404).json({ success: false, message: "Hóa đơn không hợp lệ hoặc đã thanh toán." });
     }
-
-    // 1. Lấy số tiền cuối cùng (finalAmount đã trừ discount)
-    const amount = invoice.finalAmount; 
-    if (amount <= 0) {
-      return res.status(400).json({ success: false, message: "Hóa đơn không có chi phí." });
+    if (amount === null || amount === undefined || amount < 0) {
+      return res.status(400).json({ success: false, message: "Số tiền không hợp lệ." });
     }
-
-    // 2. Tạo nội dung memo duy nhất
     const memo = `PAY ${invoice._id.toString().slice(-6).toUpperCase()}`;
-
-    // 3. Tạo link ảnh QR (Sử dụng dịch vụ VietQR)
-    // Link này khi được gọi sẽ trả về một ảnh PNG
     const qrCodeUrl = `https://api.vietqr.io/image/${BANK_ID}-${ACCOUNT_NUMBER}-compact.png?amount=${amount}&addInfo=${encodeURIComponent(memo)}&accountName=${encodeURIComponent(ACCOUNT_NAME)}`;
-
-    // 4. Trả về link ảnh và thông tin cho FE
     res.status(200).json({
       success: true,
       data: {
-        qrCodeUrl: qrCodeUrl, // FE sẽ dùng link này cho <img> src
-        memo: memo, // FE hiển thị nội dung này cho khách
-        amount: amount
+        qrCodeUrl: qrCodeUrl,
+        memo: memo,
+        amount: amount 
       }
     });
 
@@ -625,8 +657,6 @@ const generateTransferQrCode = async (req, res) => {
   }
 };
 
-// 7. Xem thông tin của bệnh nhân
-// const Patient = require("../models/Patient"); // <-- 2. ĐÃ XÓA IMPORT THỪA
 const viewPatientInfo = async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -1019,8 +1049,7 @@ const getAvailableDoctors = async (time, date, locationId) => {
   }
 };
 
-// (HÀM MỚI) 1. API Handler cho Tối ưu 1: Tìm bệnh nhân bằng CCCD
-// === THÊM HÀM MỚI 1: TÌM BỆNH NHÂN BẰNG CCCD ===
+// === THAY THẾ HÀM CŨ BẰNG HÀM MỚI NÀY ===
 const findPatientByIdCard = async (req, res) => {
   try {
     const { idCard } = req.params;
@@ -1028,22 +1057,47 @@ const findPatientByIdCard = async (req, res) => {
       return res.status(400).json({ success: false, message: "Thiếu CCCD." });
     }
 
-    // Tìm trong mảng basicInfo.idCard
-    const patient = await Patient.findOne({ "basicInfo.idCard.idNumber": idCard });
+    // 1. Tìm TẤT CẢ bệnh nhân khớp CCCD
+    // Dùng .populate() để lấy thông tin 'email' từ 'User' liên kết
+    const patients = await Patient.find({ 
+      "basicInfo.idCard.idNumber": idCard 
+    }).populate('user', 'email'); // Lấy email của User liên kết
 
-    if (!patient) {
+    // 2. Kiểm tra kết quả
+    if (!patients || patients.length === 0) {
+      // Không tìm thấy ai
       return res.status(404).json({
         success: false,
-        action: 'create_new', // Báo cho frontend biết để tạo mới
+        action: 'create_new',
         message: "Không tìm thấy bệnh nhân. Vui lòng tạo hồ sơ mới."
       });
     }
 
-    // Tìm thấy
+    // 3. ƯU TIÊN chọn tài khoản "Thật"
+    let bestMatch;
+
+    if (patients.length === 1) {
+      // Nếu chỉ có 1, trả về nó
+      bestMatch = patients[0];
+    } else {
+      // Nếu có nhiều (ví dụ: 1 ma, 1 thật)
+      // Tìm tài khoản "thật" (email không phải là email ma)
+      bestMatch = patients.find(p => 
+        p.user && p.user.email && !p.user.email.endsWith('@walkin.placeholder') //
+      );
+      
+      // Nếu không tìm thấy tài khoản "thật" (ví dụ: cả 2 đều là tài khoản ma),
+      // thì trả về cái đầu tiên
+      if (!bestMatch) {
+        bestMatch = patients[0];
+      }
+    }
+
+    // 4. Trả về kết quả đã được ưu tiên
     res.status(200).json({
       success: true,
       action: 'patient_found',
-      data: patient
+      data: bestMatch // Đây sẽ là tài khoản "thật" nếu nó tồn tại
     });
 
   } catch (error) {
@@ -1055,80 +1109,97 @@ const findPatientByIdCard = async (req, res) => {
   }
 };
 
-
-// === THAY THẾ TOÀN BỘ HÀM NÀY ===
+// === THAY THẾ HÀM CŨ BẰNG HÀM MỚI NÀY ===
 const queueWalkInPatient = async (req, res) => {
   const staffId = req.staff._id;
   const { locationId, existingPatientId, patientData } = req.body;
   
-  const AVG_SLOT_DURATION_MINUTES = 30; // Giả định 30 phút/lịch
+  const AVG_SLOT_DURATION_MINUTES = 30; 
 
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
     let patientId;
+    
     if (existingPatientId) {
       patientId = existingPatientId;
-    } else if (patientData) {
+    } 
+    else if (patientData) {
+      // Nhánh này: Lễ tân tạo mới (vì findPatientByIdCard trả về 'create_new')
       const { fullName, dateOfBirth, phone, gender, idCard, email } = patientData;
-      let userEmail = email;
-      if (!email) {
-        userEmail = `${new mongoose.Types.ObjectId()}@walkin.placeholder`;
+      // --- BẮT ĐẦU VÁ LỖI ---
+      // Kiểm tra lại lần nữa bên trong transaction
+      // để tránh race condition hoặc trường hợp tài khoản "thật" đã được tạo online
+      const existingPatientByCCCD = await Patient.findOne({ 
+        "basicInfo.idCard.idNumber": idCard 
+      }).session(session); 
+
+      if (existingPatientByCCCD) {
+        // Bệnh nhân này đã tồn tại (có thể là tài khoản "thật" hoặc "ma").
+        // KHÔNG TẠO user ma. Dùng luôn bệnh nhân này.
+        patientId = existingPatientByCCCD._id;
+        
+      } else {
+        let userEmail = email;
+        if (!email) {
+          userEmail = `${new mongoose.Types.ObjectId()}@walkin.placeholder`; 
+        }
+        
+        const tempPassword = crypto.randomBytes(8).toString('hex');
+        const newUser = new User({
+          fullName, email: userEmail, password: tempPassword, phone, role: 'patient'
+        });
+        await newUser.save({ session }); 
+
+        const newPatient = new Patient({
+          user: newUser._id,
+          basicInfo: { fullName, dateOfBirth, gender, idCard: { idNumber: idCard } },
+          contactInfo: { phone, email: userEmail, address: { street: "N/A", city: "N/A", state: "N/A", zipCode: "N/A" }},
+          isProfileComplete: false
+        });
+        await newPatient.save({ session }); 
+        patientId = newPatient._id;
       }
-      const tempPassword = crypto.randomBytes(8).toString('hex');
-      const newUser = new User({
-        fullName, email: userEmail, password: tempPassword, phone, role: 'patient'
-      });
-      await newUser.save({ session });
-      const newPatient = new Patient({
-        user: newUser._id,
-        basicInfo: { fullName, dateOfBirth, gender, idCard: { idNumber: idCard } },
-        contactInfo: { phone, email: userEmail, address: { street: "N/A", city: "N/A", state: "N/A", zipCode: "N/A" }},
-        isProfileComplete: false
-      });
-      await newPatient.save({ session });
-      patientId = newPatient._id;
+
     } else {
       throw new Error("Thiếu thông tin bệnh nhân.");
     }
 
-    // === 2. THUẬT TOÁN TỰ ĐỘNG GÁN BÁC SĨ (ĐÃ SỬA LỖI) ===
-
+    // === 2. THUẬT TOÁN TỰ ĐỘNG GÁN BÁC SĨ ===
+    
     const today = new Date();
     const todayStart = new Date(today.setHours(0, 0, 0, 0));
     const todayEnd = new Date(today.setHours(23, 59, 59, 999));
     const now = new Date(); 
 
-    // A. Tìm tất cả bác sĩ đang làm việc (Giữ nguyên)
+    // A. Tìm tất cả bác sĩ đang làm việc
     const workingSchedules = await DoctorSchedule.find({
       location: locationId,
       date: { $gte: todayStart, $lt: todayEnd },
       startTime: { $lte: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) },
       endTime: { $gt: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) },
       isAvailable: true
-    }).select('doctor').session(session);
+    }).select('doctor').session(session); 
 
     const workingDoctorIds = workingSchedules.map(s => s.doctor);
     if (workingDoctorIds.length === 0) {
       throw new Error("Không có bác sĩ nào đang trong ca làm việc tại cơ sở này.");
     }
 
-    // B. Lấy hàng chờ của các bác sĩ đó (Giữ nguyên)
+    // B. Lấy hàng chờ của các bác sĩ đó
     const appointments = await Appointment.find({
       doctor: { $in: workingDoctorIds },
       appointmentDate: { $gte: todayStart, $lt: todayEnd },
-      // === SỬA LỖI: CHỈ TÍNH CÁC LỊCH CHƯA HỦY ===
-      status: { $nin: ['cancelled', 'no-show'] } 
+      status: { $nin: ['cancelled', 'no-show'] } // Chỉ tính các lịch chưa hủy
     }).select('doctor startTime')
-      .sort({ startTime: 1 }) // Sắp xếp theo thời gian
+      .sort({ startTime: 1 }) 
       .session(session);
 
-    // C. Tính toán "Giờ rảnh tiếp theo"
+    // C. Tính toán "Giờ rảnh tiếp theo" (Logic "Tìm khe hở")
     const doctorQueue = new Map();
     for (const doctorId of workingDoctorIds) {
       const doctorAppts = appointments.filter(a => a.doctor.toString() === doctorId.toString());
-      
       let nextAvailableSlot = new Date(now.getTime()); // Bắt đầu từ bây giờ
 
       // Lọc ra các lịch hẹn TRONG TƯƠNG LAI (chưa diễn ra)
@@ -1140,44 +1211,37 @@ const queueWalkInPatient = async (req, res) => {
       });
 
       if (futureAppts.length > 0) {
-        
         const [firstHour, firstMin] = futureAppts[0].startTime.split(':').map(Number);
         const firstApptStartTime = new Date(todayStart);
         firstApptStartTime.setHours(firstHour, firstMin);
         
-        // Giờ 'Bây giờ' + 30 phút có < Giờ hẹn đầu tiên không?
         let nowPlusSlot = new Date(now.getTime() + AVG_SLOT_DURATION_MINUTES * 60000);
 
         if (nowPlusSlot <= firstApptStartTime) {
           // CÓ KHE HỞ! Bác sĩ rảnh ngay bây giờ.
-          // nextAvailableSlot VẪN LÀ 'now' (đã gán ở trên)
         } else {
-          // KHÔNG CÓ KHE HỞ (ví dụ: 'now' là 10:45, hẹn là 11:00)
-          // Giờ rảnh là SAU LỊCH HẸN CUỐI CÙNG (tính cả lịch quá khứ)
+          // KHÔNG CÓ KHE HỞ
           const [lastHour, lastMin] = doctorAppts[doctorAppts.length - 1].startTime.split(':').map(Number);
           const lastApptEndTime = new Date(todayStart);
           lastApptEndTime.setHours(lastHour, lastMin + AVG_SLOT_DURATION_MINUTES);
-          
           nextAvailableSlot = (lastApptEndTime > now) ? lastApptEndTime : now;
         }
       } 
       else if (doctorAppts.length > 0) {
-        // Bác sĩ CÓ lịch hẹn, nhưng TẤT CẢ đã ở quá khứ
+        // Bác sĩ CÓ lịch, nhưng TẤT CẢ đã ở quá khứ
         const [lastHour, lastMin] = doctorAppts[doctorAppts.length - 1].startTime.split(':').map(Number);
         const lastApptEndTime = new Date(todayStart);
         lastApptEndTime.setHours(lastHour, lastMin + AVG_SLOT_DURATION_MINUTES);
-        
         nextAvailableSlot = (lastApptEndTime > now) ? lastApptEndTime : now;
       }
-      // (Nếu doctorAppts.length == 0 (Dr. A, B), nextAvailableSlot là 'now')
-
+      
       doctorQueue.set(doctorId.toString(), {
         nextSlotTime: nextAvailableSlot,
         totalAppts: doctorAppts.length // Để cân bằng tải
       });
     }
 
-    // D. Tìm bác sĩ rảnh sớm nhất (Cân bằng tải) - Logic này giữ nguyên
+    // D. Tìm bác sĩ rảnh sớm nhất (Cân bằng tải)
     let bestDoctorId = null;
     let earliestTime = new Date("9999-12-31");
     let minAppts = Infinity;
@@ -1188,7 +1252,7 @@ const queueWalkInPatient = async (req, res) => {
         minApppts = info.totalAppts;
         bestDoctorId = doctorId;
       } else if (info.nextSlotTime.getTime() === earliestTime.getTime()) {
-        if (info.totalAppts < minApppts) {
+        if (info.totalAppts < minApppts) { // Cân bằng tải
           minApppts = info.totalAppts;
           bestDoctorId = doctorId;
         }
@@ -1199,45 +1263,50 @@ const queueWalkInPatient = async (req, res) => {
       throw new Error("Lỗi thuật toán: Không tìm được bác sĩ phù hợp.");
     }
     
-    // E. Làm tròn startTime (Giữ nguyên)
+    // E. Làm tròn startTime
     const minutes = earliestTime.getMinutes();
     const roundedMinutes = Math.ceil(minutes / 15) * 15; 
     earliestTime.setMinutes(roundedMinutes, 0, 0);
     const finalStartTime = earliestTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
 
-    // === 3. TẠO LỊCH HẸN (Giữ nguyên) ===
+    // === 3. TẠO LỊCH HẸN ===
     const appointment = new Appointment({
       appointmentId: `APT-${Date.now().toString().slice(-6)}`,
       doctor: bestDoctorId,
-      patient: patientId,
+      patient: patientId, // Dùng patientId đã được xử lý
       location: locationId,
       staff: staffId, 
       appointmentDate: todayStart, 
       startTime: finalStartTime,   
-      status: 'checked-in',     
-      paymentStatus: 'paid', 
+      status: 'checked-in', //
+      paymentStatus: 'paid', //
       bookingType: 'walk-in'
     });
     
     await appointment.save({ session }); 
 
-    // === 4. COMMIT TRANSACTION (Giữ nguyên) ===
+    // === 4. COMMIT TRANSACTION ===
     await session.commitTransaction();
     session.endSession();
 
     const assignedDoctor = await Doctor.findById(bestDoctorId).populate('user', 'fullName');
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate('location', 'name address')
+      .populate('doctor', 'user')
+      .populate({ path: 'doctor', populate: { path: 'user', select: 'fullName' }});
 
     res.status(201).json({
       success: true,
       message: `Xếp hàng thành công! Mời bệnh nhân đến phòng Bác sĩ ${assignedDoctor.user.fullName}.`,
       data: {
-        appointment,
+        appointment: populatedAppointment,
         doctorName: assignedDoctor.user.fullName,
         assignedTime: finalStartTime
       }
     });
 
   } catch (error) {
+    // 5. ROLLBACK
     await session.abortTransaction();
     session.endSession();
     
