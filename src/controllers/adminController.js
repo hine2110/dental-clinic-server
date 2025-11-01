@@ -53,7 +53,9 @@ const createStaffAccount = async (req, res) => {
       phone,
     };
     if (req.file) {
-      userData.avatar = req.file.path; 
+      // Lưu relative path thay vì absolute path
+      const relativePath = req.file.path.replace(/\\/g, '/').replace(/^.*\/uploads\//, 'uploads/');
+      userData.avatar = relativePath; 
     }
 
     // Create user account

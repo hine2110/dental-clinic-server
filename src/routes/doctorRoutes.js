@@ -68,7 +68,12 @@ router.get('/profile', getDoctorProfile);
  * @desc    Cập nhật thông tin profile của bác sĩ
  * @access  Private (Doctor only)
  */
-router.put('/profile', updateDoctorProfile);
+router.put(
+  '/profile',
+  uploadProfile.single('avatar'),
+  handleUploadError,
+  updateDoctorProfile
+);
 
 // ==================== DOCTOR APPOINTMENTS ====================
 

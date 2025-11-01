@@ -46,8 +46,45 @@ const updateDoctorProfile = async (req, res) => {
     const userId = req.user._id;
     const updateData = req.body;
 
+    // Xử lý specializations từ FormData (có thể là array)
+    let specializations = updateData.specializations;
+    if (!Array.isArray(specializations) && specializations) {
+      // Nếu là string, chuyển thành array
+      specializations = [specializations];
+    }
+    
+    // Xử lý experience từ FormData nested object
+    let yearsOfPractice = 0;
+    if (updateData['experience[yearsOfPractice]']) {
+      yearsOfPractice = parseInt(updateData['experience[yearsOfPractice]']) || 0;
+    } else if (updateData.experience && typeof updateData.experience === 'object') {
+      yearsOfPractice = parseInt(updateData.experience.yearsOfPractice) || 0;
+    } else if (updateData.experience && typeof updateData.experience === 'string') {
+      // Nếu là JSON string
+      try {
+        const exp = JSON.parse(updateData.experience);
+        yearsOfPractice = parseInt(exp.yearsOfPractice) || 0;
+      } catch (e) {
+        yearsOfPractice = 0;
+      }
+    }
+
     // Tách riêng phone để cập nhật vào User model
     const { phone, ...doctorUpdateData } = updateData;
+    
+    // Xóa các field không thuộc Doctor model
+    delete doctorUpdateData['experience[yearsOfPractice]'];
+    
+    // Gán lại specializations và experience
+    if (specializations && Array.isArray(specializations)) {
+      doctorUpdateData.specializations = specializations;
+    }
+    
+    if (yearsOfPractice !== undefined) {
+      doctorUpdateData.experience = {
+        yearsOfPractice: yearsOfPractice
+      };
+    }
 
     // Loại bỏ các field không được phép cập nhật
     delete doctorUpdateData._id;
@@ -56,7 +93,8 @@ const updateDoctorProfile = async (req, res) => {
     delete doctorUpdateData.createdAt;
     delete doctorUpdateData.updatedAt;
 
-    // Cập nhật User model nếu có phone
+    // Xử lý avatar upload nếu có
+    const userUpdateData = {};
     if (phone !== undefined) {
       // Validate phone number format
       const phoneRegex = /^[0-9]{10}$/;
@@ -66,10 +104,21 @@ const updateDoctorProfile = async (req, res) => {
           message: "Số điện thoại không hợp lệ. Phải có đúng 10 chữ số."
         });
       }
-      
+      userUpdateData.phone = phone;
+    }
+    
+    // Cập nhật avatar nếu có file upload
+    if (req.file) {
+      // Lưu relative path thay vì absolute path
+      const relativePath = req.file.path.replace(/\\/g, '/').replace(/^.*\/uploads\//, 'uploads/');
+      userUpdateData.avatar = relativePath;
+    }
+
+    // Cập nhật User model nếu có dữ liệu cần cập nhật
+    if (Object.keys(userUpdateData).length > 0) {
       await User.findByIdAndUpdate(
         userId,
-        { phone },
+        userUpdateData,
         { new: true, runValidators: true }
       );
     }
