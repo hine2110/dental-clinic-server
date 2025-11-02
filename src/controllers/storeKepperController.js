@@ -161,46 +161,61 @@ const updateMedicine = async (req, res) => {
   try {
     const { medicineId } = req.params; // Đây là _id của thuốc
     const update = req.body || {};
-
     // 1. SỬA: Lấy locationId từ req.query (URL)
     const { locationId } = req.query;
     if (!locationId) {
         return res.status(400).json({ success: false, message: "Thiếu tham số locationId trên URL" });
     }
 
-    if (update.currentStock !== undefined) {
-      // 2. SỬA: Dùng 'locationId' từ query
-      const currentMedicine = await Medicine.findOne({ 
-        _id: medicineId, 
-        location: locationId 
-      });
-      
+    // TRƯỜNG HỢP 1: NHẬP KHO (CỘNG DỒN)
+    // Frontend gửi { addStock: 50 }
+    if (update.addStock !== undefined) {
+      const stockToAdd = Number(update.addStock) || 0;
+      if (stockToAdd <= 0) {
+           return res.status(400).json({ success: false, message: "Số lượng nhập kho phải lớn hơn 0" });
+      }
+
+      const currentMedicine = await Medicine.findOne({ _id: medicineId, location: locationId });
       if (!currentMedicine) {
-        return res.status(404).json({ success: false, message: "Không tìm thấy thuốc tại cơ sở này" });
+          return res.status(404).json({ success: false, message: "Không tìm thấy thuốc tại cơ sở này" });
       }
       
       const currentStockInDB = Number(currentMedicine.currentStock) || 0;
-      const currentStockToAdd = Number(update.currentStock) || 0;
-      update.currentStock = currentStockInDB + currentStockToAdd;
-    }
-    
-    // 3. SỬA: Dùng 'locationId' từ query
-    const updated = await Medicine.findOneAndUpdate(
-      { _id: medicineId, location: locationId }, 
-      update, 
-      { new: true, runValidators: true }
-    );
-    
-    if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thuốc hoặc bạn không có quyền cập nhật" });
-    res.status(200).json({ success: true, message: "Cập nhật thuốc thành công", data: updated });
-  } catch (error) {
-    // Thêm xử lý ValidationError (gây ra lỗi 500 do CastError)
-    if (error.name === 'ValidationError' || error.name === 'CastError') {
-      const message = error.message || "Lỗi xác thực dữ liệu";
-      return res.status(400).json({ success: false, message: message });
-    }
-    res.status(500).json({ success: false, message: "Lỗi khi cập nhật thuốc", error: error.message });
+      // Gán giá trị mới vào 'update.currentStock' để hàm findOneAndUpdate bên dưới xử lý
+      update.currentStock = currentStockInDB + stockToAdd;
+      
+      // Xóa 'addStock' khỏi body để nó không bị lưu nhầm vào DB
+      delete update.addStock; 
+  
+  // TRƯỜNG HỢP 2: CẬP NHẬT (SET SỐ LƯỢNG)
+  // Frontend gửi { ..., currentStock: 200 }
+  } else if (update.currentStock !== undefined) {
+      // Người dùng đang set số lượng, chỉ cần đảm bảo nó là số
+      update.currentStock = Number(update.currentStock) || 0;
+      if (update.currentStock < 0) {
+           return res.status(400).json({ success: false, message: "Số lượng tồn kho không thể là số âm" });
+      }
   }
+  // (Nếu không có cả 'addStock' và 'currentStock', nó sẽ chỉ cập nhật các trường khác)
+  // === KẾT THÚC LOGIC MỚI ===
+    
+    // 3. Cập nhật vào DB
+    const updated = await Medicine.findOneAndUpdate(
+      { _id: medicineId, location: locationId }, 
+      update, // 'update' giờ đã chứa trường 'currentStock' chính xác
+      { new: true, runValidators: true }
+    );
+    
+    if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thuốc hoặc bạn không có quyền cập nhật" });
+    res.status(200).json({ success: true, message: "Cập nhật thuốc thành công", data: updated });
+
+  } catch (error) {
+    if (error.name === 'ValidationError' || error.name === 'CastError') {
+      const message = error.message || "Lỗi xác thực dữ liệu";
+      return res.status(400).json({ success: false, message: message });
+    }
+    res.status(500).json({ success: false, message: "Lỗi khi cập nhật thuốc", error: error.message });
+  }
 };
 
 const deleteMedicine = async (req, res) => {
@@ -363,30 +378,39 @@ const reportEquipment = async (req, res) => {
 
 const viewEquipmentIssues = async (req, res) => {
   try {
-    // 1. Code của bạn ở đây đã đúng!
+    // 1. Lấy locationId từ query (giống hệt frontend)
     const { locationId } = req.query;
     if (!locationId) {
-      // Sửa 403 thành 400
       return res.status(400).json({ success: false, message: "Thiếu thông tin cơ sở (locationId)" });
     }
 
-    // 2. Lấy danh sách ID của các thiết bị tại cơ sở này
+    // 2. Lấy danh sách ID của các thiết bị CHỈ thuộc cơ sở này
     const locationEquipment = await Equipment.find({ location: locationId }).select('_id');
     const equipmentIds = locationEquipment.map(e => e._id);
 
     // 3. Xây dựng query cho EquipmentIssue
     const { status } = req.query;
     const query = {
-      equipment: { $in: equipmentIds } 
+      equipment: { $in: equipmentIds } // Chỉ lấy issue của các thiết bị thuộc cơ sở này
     };
     if (status) {
       query.status = status;
     }
 
-    // 4. Tìm các issue
+    // 4. Tìm các issue VÀ POPULATE DỮ LIỆU
     const issues = await EquipmentIssue.find(query)
-      .populate(/* ... */)
-      .populate(/* ... */)
+      .populate({
+        path: 'equipment', // 1. Populate trường 'equipment'
+        select: 'name model' // Lấy tên và model của thiết bị
+      })
+      .populate({
+        path: 'reporter',    // 2. Populate trường 'reporter' (là model Staff)
+        select: 'user',      // Chỉ lấy trường 'user' từ Staff
+        populate: {
+          path: 'user',      // 3. Populate lồng nhau trường 'user' (là model User)
+          select: 'fullName' // Chỉ lấy 'fullName' từ User
+        }
+      })
       .sort({ createdAt: -1 });
 
     res.status(200).json({ 
@@ -395,7 +419,8 @@ const viewEquipmentIssues = async (req, res) => {
       data: issues 
     });
   } catch (error) {
-    // ...
+    console.error("!!! LỖI viewEquipmentIssues:", error);
+    res.status(500).json({ success: false, message: "Lỗi khi lấy danh sách báo cáo", error: error.message });
   }
 };
 
