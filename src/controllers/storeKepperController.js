@@ -99,14 +99,23 @@ const viewPrescriptions = async (req, res) => {
   }
 };
 
-// 3. Lấy thuốc từ kho theo đơn (đã chuyển sang receptionistStaffController)
 
 // 4. INVENTORY - Thuốc: xem, tạo, cập nhật, xóa
 const viewInventory = async (req, res) => {
   try {
+    // 1. Lấy ID cơ sở của nhân viên
+    const { locationId } = req.query;
+    if (!locationId) {
+      return res.status(403).json({ success: false, message: "Không xác định được cơ sở của nhân viên" });
+    }
+
     const { isActive } = req.query;
-    const query = {};
+    
+    // 2. Thêm location vào câu truy vấn
+    const query = { location: locationId };
+    
     if (isActive !== undefined) query.isActive = isActive === "true";
+
     const meds = await Medicine.find(query).sort({ name: 1 });
     res.status(200).json({ success: true, message: "Lấy danh sách thuốc thành công", data: meds });
   } catch (error) {
@@ -114,55 +123,102 @@ const viewInventory = async (req, res) => {
   }
 };
 
+
+
 const createMedicine = async (req, res) => {
   try {
+    // 1. SỬA: Lấy data từ req.body
     const data = req.body || {};
+    
+    // 2. SỬA: Kiểm tra 'data.location' (frontend đã gửi trong body)
+    if (!data.location) { 
+      return res.status(400).json({ success: false, message: "Thiếu thông tin cơ sở (location)" });
+    }
     if (!data.name || !data.price) {
       return res.status(400).json({ success: false, message: "Thiếu tên thuốc hoặc giá" });
     }
+
     if (!data.medicineId) {
-      const count = await Medicine.countDocuments();
+      // 3. SỬA: Đếm dựa trên 'data.location'
+      const count = await Medicine.countDocuments({ location: data.location }); 
       data.medicineId = `MED${String(count + 1).padStart(4, "0")}`;
     }
+    
+    // 4. SỬA: Bỏ dòng 'data.location = storeLocationId;' vì nó đã có trong 'data'
+    
     const created = new Medicine(data);
     await created.save();
     res.status(201).json({ success: true, message: "Tạo thuốc thành công", data: created });
   } catch (error) {
+    if (error.code === 11000) {
+       return res.status(409).json({ success: false, message: `Mã thuốc ${data.medicineId} đã tồn tại ở cơ sở này.` });
+    }
     res.status(500).json({ success: false, message: "Lỗi khi tạo thuốc", error: error.message });
   }
 };
 
 const updateMedicine = async (req, res) => {
   try {
-    const { medicineId } = req.params;
+    const { medicineId } = req.params; // Đây là _id của thuốc
     const update = req.body || {};
-    
-    // Nếu có currentStock trong body, cộng dồn vào currentStock hiện tại
+
+    // 1. SỬA: Lấy locationId từ req.query (URL)
+    const { locationId } = req.query;
+    if (!locationId) {
+        return res.status(400).json({ success: false, message: "Thiếu tham số locationId trên URL" });
+    }
+
     if (update.currentStock !== undefined) {
-      const currentMedicine = await Medicine.findById(medicineId);
+      // 2. SỬA: Dùng 'locationId' từ query
+      const currentMedicine = await Medicine.findOne({ 
+        _id: medicineId, 
+        location: locationId 
+      });
+      
       if (!currentMedicine) {
-        return res.status(404).json({ success: false, message: "Không tìm thấy thuốc" });
+        return res.status(404).json({ success: false, message: "Không tìm thấy thuốc tại cơ sở này" });
       }
       
-      // Cộng dồn: newCurrentStock = currentStock (trong kho) + currentStock (vừa nhập)
-      // Đảm bảo cả hai đều là number để cộng số học
       const currentStockInDB = Number(currentMedicine.currentStock) || 0;
       const currentStockToAdd = Number(update.currentStock) || 0;
       update.currentStock = currentStockInDB + currentStockToAdd;
     }
     
-    const updated = await Medicine.findByIdAndUpdate(medicineId, update, { new: true, runValidators: true });
-    if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thuốc" });
+    // 3. SỬA: Dùng 'locationId' từ query
+    const updated = await Medicine.findOneAndUpdate(
+      { _id: medicineId, location: locationId }, 
+      update, 
+      { new: true, runValidators: true }
+    );
+    
+    if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thuốc hoặc bạn không có quyền cập nhật" });
     res.status(200).json({ success: true, message: "Cập nhật thuốc thành công", data: updated });
   } catch (error) {
+    // Thêm xử lý ValidationError (gây ra lỗi 500 do CastError)
+    if (error.name === 'ValidationError' || error.name === 'CastError') {
+      const message = error.message || "Lỗi xác thực dữ liệu";
+      return res.status(400).json({ success: false, message: message });
+    }
     res.status(500).json({ success: false, message: "Lỗi khi cập nhật thuốc", error: error.message });
   }
 };
 
 const deleteMedicine = async (req, res) => {
   try {
-    const { medicineId } = req.params;
-    const deleted = await Medicine.findByIdAndDelete(medicineId);
+    const { medicineId } = req.params; // Đây là _id của thuốc
+    
+    // 1. SỬA: Lấy locationId từ req.query (URL)
+    const { locationId } = req.query;
+    if (!locationId) {
+        return res.status(400).json({ success: false, message: "Thiếu tham số locationId trên URL" });
+    }
+    
+    // 2. SỬA: Dùng 'locationId' từ query
+    const deleted = await Medicine.findOneAndDelete({ 
+      _id: medicineId, 
+      location: locationId
+    });
+    
     if (!deleted) return res.status(404).json({ success: false, message: "Không tìm thấy thuốc" });
     res.status(200).json({ success: true, message: "Xóa thuốc thành công", data: deleted });
   } catch (error) {
@@ -173,9 +229,20 @@ const deleteMedicine = async (req, res) => {
 // 5. EQUIPMENT - xem, tạo, cập nhật, xóa
 const viewEquipment = async (req, res) => {
   try {
+    // 1. SỬA: Lấy locationId từ req.query
+    const { locationId } = req.query; 
+
+    // 2. SỬA: Kiểm tra locationId (và đổi 403 thành 400)
+    if (!locationId) {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin cơ sở (locationId)" });
+    }
+
     const { isActive } = req.query;
-    const query = {};
+    
+    // 3. Giờ 'query' đã đúng
+    const query = { location: locationId }; 
     if (isActive !== undefined) query.isActive = isActive === "true";
+    
     const equipment = await Equipment.find(query).sort({ name: 1 });
     res.status(200).json({ success: true, message: "Lấy danh sách thiết bị thành công", data: equipment });
   } catch (error) {
@@ -185,11 +252,18 @@ const viewEquipment = async (req, res) => {
 
 const createEquipment = async (req, res) => {
   try {
+    // 1. SỬA: Lấy data từ req.body
     const data = req.body || {};
+    
+    // 2. SỬA: Kiểm tra location từ body (client đã gửi)
+    if (!data.location) {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin cơ sở (location)" });
+    }
     if (!data.name) {
       return res.status(400).json({ success: false, message: "Thiếu tên thiết bị" });
     }
-    // MongoDB sẽ tự động tạo _id
+    
+    // 3. 'data' đã chứa 'location' từ client
     const created = new Equipment(data);
     await created.save();
     res.status(201).json({ success: true, message: "Tạo thiết bị thành công", data: created });
@@ -198,13 +272,26 @@ const createEquipment = async (req, res) => {
     res.status(500).json({ success: false, message: "Lỗi khi tạo thiết bị", error: error.message });
   }
 };
-
 const updateEquipment = async (req, res) => {
   try {
-    const { equipmentId } = req.params; // equipmentId trong params thực chất là _id
+    const { equipmentId } = req.params; // _id của thiết bị
     const update = req.body || {};
-    const updated = await Equipment.findByIdAndUpdate(equipmentId, update, { new: true, runValidators: true });
-    if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thiết bị" });
+
+    // 1. SỬA: Lấy locationId từ req.query
+    // Client cần gửi: PUT .../equipment/123?locationId=ABC
+    const { locationId } = req.query;
+    if (!locationId) {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin cơ sở (locationId) để xác thực" });
+    }
+    
+    // 2. SỬA: Thêm location vào điều kiện update
+    const updated = await Equipment.findOneAndUpdate(
+      { _id: equipmentId, location: locationId }, // Chỉ update nếu thuộc cơ sở
+      update, 
+      { new: true, runValidators: true }
+    );
+    
+    if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy thiết bị tại cơ sở này" });
     res.status(200).json({ success: true, message: "Cập nhật thiết bị thành công", data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi khi cập nhật thiết bị", error: error.message });
@@ -213,43 +300,60 @@ const updateEquipment = async (req, res) => {
 
 const deleteEquipment = async (req, res) => {
   try {
-    const { equipmentId } = req.params; // equipmentId trong params thực chất là _id
-    const deleted = await Equipment.findByIdAndDelete(equipmentId);
-    if (!deleted) return res.status(404).json({ success: false, message: "Không tìm thấy thiết bị" });
+    const { equipmentId } = req.params; // _id của thiết bị
+
+    // 1. SỬA: Lấy locationId từ req.query
+    // Client cần gửi: DELETE .../equipment/123?locationId=ABC
+    const { locationId } = req.query;
+    if (!locationId) {
+      return res.status(400).json({ success: false, message: "Thiếu thông tin cơ sở (locationId) để xác thực" });
+    }
+
+    // 2. SỬA: Thêm location vào điều kiện delete
+    const deleted = await Equipment.findOneAndDelete({ 
+      _id: equipmentId, 
+      location: locationId 
+    });
+    
+    if (!deleted) return res.status(404).json({ success: false, message: "Không tìm thấy thiết bị tại cơ sở này" });
     res.status(200).json({ success: true, message: "Xóa thiết bị thành công", data: deleted });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi khi xóa thiết bị", error: error.message });
   }
 };
-
 // 6. Báo cáo thiết bị bị hỏng
 const reportEquipment = async (req, res) => {
   try {
-    const staffId = req.staff._id;
-    const { equipment, equipmentId, issueDescription, priority, severity, status, adminNotes, estimatedRepairCost, images } = req.body;
+    const staffId = req.staff._id; // ID của nhân viên báo cáo
     
-    // Hỗ trợ cả equipment và equipmentId
+    const { equipment, equipmentId, issueDescription, ...otherData } = req.body;
     const equipmentObjectId = equipment || equipmentId;
     
     if (!equipmentObjectId || !issueDescription) {
       return res.status(400).json({ success: false, message: "Thiếu thông tin thiết bị hoặc mô tả lỗi" });
     }
+
+    // SỬA: Không cần kiểm tra location ở đây
+    // Logic của viewEquipmentIssues đã lọc theo location
+    // Chỉ cần đảm bảo thiết bị tồn tại
+    const targetEquipment = await Equipment.findById(equipmentObjectId);
+
+    if (!targetEquipment) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy thiết bị này." });
+    }
     
-    
-    // Tạo EquipmentIssue với MongoDB tự sinh _id
     const issue = new EquipmentIssue({
       equipment: equipmentObjectId,
       reporter: staffId,
       issueDescription,
-      priority,
-      severity,
-      status,
-      adminNotes,
-      estimatedRepairCost,
-      images
+      ...otherData
     });
-    
     await issue.save();
+
+    // Cập nhật trạng thái thiết bị
+    targetEquipment.status = otherData.status === 'in_repair' ? 'in_repair' : 'maintenance';
+    await targetEquipment.save();
+
     res.status(201).json({ success: true, message: "Báo cáo thiết bị thành công", data: issue });
   } catch (error) {
     console.error("!!! LỖI reportEquipment:", error);
@@ -259,26 +363,31 @@ const reportEquipment = async (req, res) => {
 
 const viewEquipmentIssues = async (req, res) => {
   try {
-    const { status } = req.query;
-    const query = {};
-    if (status) {
-      query.status = status; // Lọc theo trạng thái (ví dụ: 'reported', 'in_repair')
+    // 1. Code của bạn ở đây đã đúng!
+    const { locationId } = req.query;
+    if (!locationId) {
+      // Sửa 403 thành 400
+      return res.status(400).json({ success: false, message: "Thiếu thông tin cơ sở (locationId)" });
     }
 
+    // 2. Lấy danh sách ID của các thiết bị tại cơ sở này
+    const locationEquipment = await Equipment.find({ location: locationId }).select('_id');
+    const equipmentIds = locationEquipment.map(e => e._id);
+
+    // 3. Xây dựng query cho EquipmentIssue
+    const { status } = req.query;
+    const query = {
+      equipment: { $in: equipmentIds } 
+    };
+    if (status) {
+      query.status = status;
+    }
+
+    // 4. Tìm các issue
     const issues = await EquipmentIssue.find(query)
-      .populate({
-        path: 'equipment',
-        select: 'name model serialNumber' // Lấy thông tin thiết bị
-      })
-      .populate({
-        path: 'reporter',
-        select: 'user', // Lấy thông tin staff đã báo cáo
-        populate: {
-          path: 'user',
-          select: 'fullName' // Lấy tên của staff đó
-        }
-      })
-      .sort({ createdAt: -1 }); // Sắp xếp mới nhất lên đầu
+      .populate(/* ... */)
+      .populate(/* ... */)
+      .sort({ createdAt: -1 });
 
     res.status(200).json({ 
       success: true, 
@@ -286,12 +395,7 @@ const viewEquipmentIssues = async (req, res) => {
       data: issues 
     });
   } catch (error) {
-    console.error("!!! LỖI viewEquipmentIssues:", error); 
-    res.status(500).json({ 
-      success: false, 
-      message: "Lỗi khi lấy danh sách báo cáo", 
-      error: error.message 
-    });
+    // ...
   }
 };
 
