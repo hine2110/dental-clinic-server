@@ -10,36 +10,36 @@ const managementSchema = new mongoose.Schema(
     },
     permissions: {
       // Scheduling permissions (management capabilities)
-      createDoctorSchedule: { type: Boolean, default: false },
-      createReceptionistSchedule: { type: Boolean, default: false },
-      createStoreKepperSchedule: { type: Boolean, default: false },
+      createDoctorSchedule: { type: Boolean, default: true },
+      createReceptionistSchedule: { type: Boolean, default: true },
+      createStoreKepperSchedule: { type: Boolean, default: true },
 
-      viewDoctorProfile: { type: Boolean, default: false },
-      viewStaffProfile: { type: Boolean, default: false },
+      viewDoctorProfile: { type: Boolean, default: true },
+      viewStaffProfile: { type: Boolean, default: true },
 
-      viewDoctorSchedule: { type: Boolean, default: false },
-      viewStaffSchedule: { type: Boolean, default: false },
+      viewDoctorSchedule: { type: Boolean, default: true },
+      viewStaffSchedule: { type: Boolean, default: true },
 
-      updateDoctorSchedule: { type: Boolean, default: false },
-      updateStaffSchedule: { type: Boolean, default: false },
+      updateDoctorSchedule: { type: Boolean, default: true },
+      updateStaffSchedule: { type: Boolean, default: true },
 
-      deleteDoctorSchedule: { type: Boolean, default: false },
-      deleteStaffSchedule: { type: Boolean, default: false },
+      deleteDoctorSchedule: { type: Boolean, default: true },
+      deleteStaffSchedule: { type: Boolean, default: true },
 
-      viewEquipmentDamageReports: { type: Boolean, default: false },
-      updateEquipmentDamageReports: { type: Boolean, default: false },
+      viewEquipmentDamageReports: { type: Boolean, default: true },
+      updateEquipmentDamageReports: { type: Boolean, default: true },
 
       // Revenue analytics
-      viewRevenueWeekly: { type: Boolean, default: false },
-      viewRevenueMonthly: { type: Boolean, default: false },
-      viewRevenueYearly: { type: Boolean, default: false },
+      viewRevenueWeekly: { type: Boolean, default: true },
+      viewRevenueMonthly: { type: Boolean, default: true },
+      viewRevenueYearly: { type: Boolean, default: true },
 
       //location
-      getAllLocations: { type: Boolean, default: false },
-      createLocation: { type: Boolean, default: false },
-      updateLocation: { type: Boolean, default: false },
-      deleteLocation: { type: Boolean, default: false },
-      viewLocation: { type: Boolean, default: false },
+      getAllLocations: { type: Boolean, default: true },
+      createLocation: { type: Boolean, default: true },
+      updateLocation: { type: Boolean, default: true },
+      deleteLocation: { type: Boolean, default: true },
+      viewLocation: { type: Boolean, default: true },
       
     },
   },
