@@ -361,6 +361,22 @@ const createDoctorSchedule = async (req, res) => {
 
         const utcDate = new Date(date);
 
+        const conflictQuery = {
+          doctor: doctorId,
+          date: utcDate,
+          startTime: { $lt: endTime },
+          endTime: { $gt: startTime }
+        };
+
+        const conflictingSchedule = await DoctorSchedule
+          .findOne(conflictQuery)
+          .populate('location', 'name');
+
+        if (conflictingSchedule) {
+          errors.push(`Lịch ${i + 1}: Xung đột lịch! Bác sĩ đã có lịch từ ${conflictingSchedule.startTime} đến ${conflictingSchedule.endTime} tại cơ sở "${conflictingSchedule.location.name}" trong ngày này.`);
+          continue;
+        }
+
         // Create then check weekly composition including new shift
         console.log('Creating schedule with data:', {
           doctor: doctorId,
@@ -919,8 +935,16 @@ const getAllEquipmentIssues = async (req, res) => {
     const query = {};
     if (status) query.status = status;
     if (severity) query.severity = severity;
+
     const issues = await EquipmentIssue.find(query)
-    .populate('equipment', 'name model serialNumber')
+    .populate({
+        path: 'equipment', 
+        select: 'name model serialNumber location', // 1. Thêm 'location' vào select
+        populate: {
+          path: 'location', // 2. Populate lồng 'location'
+          select: 'name'    // 3. Chỉ lấy tên của location
+        }
+      })
     .populate({ // Lấy thông tin người báo cáo
       path: 'reporter', 
       select: 'user staffType', // Thêm staffType nếu cần
@@ -1508,6 +1532,11 @@ const deleteLocation = async (req, res) => {
     });
   }
 };
+
+
+
+
+
 module.exports = {
   getManagerProfile,
   updateManagerProfile,
