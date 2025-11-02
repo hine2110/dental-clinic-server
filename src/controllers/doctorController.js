@@ -556,17 +556,52 @@ const createPrescription = async (req, res) => {
 
     // Kiểm tra appointment có tồn tại và thuộc về bác sĩ này không
     let appointment = null;
+    let locationId = null;
     if (appointmentId) {
       appointment = await Appointment.findOne({
         _id: appointmentId,
         doctor: doctor._id
-      });
+      }).populate('location', '_id').populate('schedule', 'location');
       
       if (!appointment) {
         return res.status(404).json({
           success: false,
           message: "Không tìm thấy lịch hẹn hoặc không có quyền truy cập"
         });
+      }
+      
+      // Lấy locationId từ appointment (ưu tiên location trực tiếp, sau đó từ schedule)
+      locationId = appointment.location?._id || appointment.location || 
+                   appointment.schedule?.location?._id || appointment.schedule?.location;
+    }
+
+    // Validate medicines theo location (nếu có medications và locationId)
+    if (medications && Array.isArray(medications) && medications.length > 0 && locationId) {
+      const medicineIds = medications
+        .map(m => m.medicine)
+        .filter(id => id && (typeof id === 'object' || typeof id === 'string'));
+      
+      if (medicineIds.length > 0) {
+        // Kiểm tra tất cả medicines có thuộc location này không
+        const validMedicines = await Medicine.find({
+          _id: { $in: medicineIds },
+          location: locationId,
+          isActive: true
+        }).select('_id');
+        
+        const validMedicineIds = validMedicines.map(m => m._id.toString());
+        const invalidMedicines = medicineIds.filter(id => {
+          const idStr = id.toString ? id.toString() : String(id);
+          return !validMedicineIds.includes(idStr);
+        });
+        
+        if (invalidMedicines.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Một số thuốc không có sẵn tại cơ sở này. Vui lòng chọn lại thuốc từ danh sách có sẵn.`,
+            invalidMedicines: invalidMedicines
+          });
+        }
       }
     }
 
@@ -1281,9 +1316,8 @@ const updateAppointmentStatus = async (req, res) => {
           testImages: Array.isArray(appointment.testImages) ? appointment.testImages : []
         });
         
-        console.log('✅ Created medical record for appointment:', appointment.appointmentId);
       } catch (medicalRecordError) {
-        console.error('❌ Error creating medical record:', medicalRecordError);
+        console.error('Error creating medical record:', medicalRecordError);
         // Không throw error để không ảnh hưởng đến flow chính
       }
     }
@@ -1304,13 +1338,26 @@ const updateAppointmentStatus = async (req, res) => {
 };
 
 /**
- * Lấy danh sách thuốc
- * GET /api/medicines
+ * Lấy danh sách thuốc theo location
+ * GET /api/doctor/medicines?locationId=xxx
  */
 const getMedicines = async (req, res) => {
   try {
-    const medicines = await Medicine.find({ isActive: true })
-      .select('name description unit price currentStock')
+    const { locationId } = req.query;
+    
+    if (!locationId) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu thông tin locationId. Vui lòng cung cấp locationId trong query."
+      });
+    }
+
+    const medicines = await Medicine.find({ 
+      isActive: true,
+      location: locationId 
+    })
+      .select('name description unit price currentStock location')
+      .populate('location', 'name')
       .sort({ name: 1 });
 
     res.status(200).json({
